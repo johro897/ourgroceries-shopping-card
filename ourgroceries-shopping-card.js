@@ -1,5 +1,5 @@
 /**
- * ourgroceries-shopping-card  v1.2.0
+ * ourgroceries-shopping-card  v1.2.1
  * Shopping-list card for a `todo.*` entity (e.g. from the companion
  * ourgroceries-sync integration, or any other todo.* source), with
  * add-item suggestions sourced from ourgroceries-sync's
@@ -258,7 +258,10 @@ class OurGroceriesShoppingCard extends HTMLElement {
     return `
       <div class="row${done ? " done" : ""}">
         <input type="checkbox" data-uid="${esc(item.uid)}" ${done ? "checked" : ""} aria-label="${esc(item.summary)}">
-        <span class="summary">${esc(item.summary)}</span>
+        <span class="summary-block">
+          <span class="summary">${esc(item.summary)}</span>
+          ${item.description ? `<span class="note">${esc(item.description)}</span>` : ""}
+        </span>
         <button class="remove" data-uid="${esc(item.uid)}" aria-label="${t(this._hass, "remove")}: ${esc(item.summary)}">✕</button>
       </div>`;
   }
@@ -344,7 +347,9 @@ class OurGroceriesShoppingCard extends HTMLElement {
         }
         .rows .row:last-child, .group .row:last-child { border-bottom: none; }
         .row input[type="checkbox"] { flex-shrink: 0; width: 18px; height: 18px; accent-color: var(--primary-color); cursor: pointer; }
-        .row .summary { flex: 1; font-size: 14px; color: var(--primary-text-color); word-break: break-word; }
+        .row .summary-block { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+        .row .summary { font-size: 14px; color: var(--primary-text-color); word-break: break-word; }
+        .row .note { font-size: 11px; color: var(--secondary-text-color); }
         .row.done .summary { color: var(--secondary-text-color); text-decoration: line-through; }
         .row .remove {
           flex-shrink: 0; border: none; background: transparent; cursor: pointer;

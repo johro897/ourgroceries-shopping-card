@@ -71,11 +71,14 @@ title: Groceries   # optional — defaults to the entity's own friendly name
 
 - Home Assistant 2024.1 or newer (needs the `todo` domain's `get_items` service with a response)
 - A `todo.*` entity — typically from the companion [ourgroceries-sync](https://github.com/johro897/ourgroceries-sync) integration
-- Optional, for category grouping and suggestions: [ourgroceries-sync](https://github.com/johro897/ourgroceries-sync) 1.1.0+ installed and configured
+- Optional, for category grouping and suggestions: [ourgroceries-sync](https://github.com/johro897/ourgroceries-sync) 1.1.1+ installed and configured
 
 ---
 
 ## Changelog
+
+### 1.2.1
+- List items now show their note (e.g. "125g") as subtext, sourced from the item's standard `description` field — needs ourgroceries-sync 1.1.1+. Read-only; no way to add or edit a note from the card yet (see [issue #5](https://github.com/johro897/ourgroceries-shopping-card/issues/5))
 
 ### 1.2.0
 - Items now group under a category header bar when the companion integration provides category data (new `get_categories` call), falling back to a flat list otherwise
