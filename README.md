@@ -3,7 +3,11 @@
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/hacs/integration)
 [![GitHub release](https://img.shields.io/github/release/johro897/ourgroceries-shopping-card.svg)](https://github.com/johro897/ourgroceries-shopping-card/releases)
 
+<img src="images/icon.png" width="96" alt="">
+
 A Lovelace shopping-list card for a Home Assistant `todo.*` entity, with add-item autocomplete sourced from your OurGroceries item history.
+
+*(Icon only for now — a real screenshot will replace it here once this has been tested in a live dashboard.)*
 
 ---
 
