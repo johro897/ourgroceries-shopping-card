@@ -1,14 +1,14 @@
 /**
- * ourgroceries-shopping-card  v1.0.0
- * Shopping-list card for a `todo.*` entity (e.g. from Home Assistant's
- * built-in OurGroceries integration), with add-item autocomplete sourced
- * from the companion ourgroceries-autocomplete integration's
- * `ourgroceries_autocomplete.get_suggestions` service.
+ * ourgroceries-shopping-card  v1.1.0
+ * Shopping-list card for a `todo.*` entity (e.g. from the companion
+ * ourgroceries-sync integration, or any other todo.* source), with
+ * add-item autocomplete sourced from ourgroceries-sync's
+ * `ourgroceries_sync.get_suggestions` service.
  *
  * This card never talks to OurGroceries directly — all list reads/writes go
  * through HA's standard `todo.*` services against the entity you configure.
  * Autocomplete degrades gracefully (empty suggestion list, no error shown)
- * if ourgroceries-autocomplete isn't installed.
+ * if ourgroceries-sync isn't installed.
  *
  * Configuration:
  *   type: custom:ourgroceries-shopping-card
@@ -134,7 +134,7 @@ class OurGroceriesShoppingCard extends HTMLElement {
   async _loadSuggestions() {
     try {
       const result = await this._callServiceWithResponse(
-        "ourgroceries_autocomplete",
+        "ourgroceries_sync",
         "get_suggestions"
       );
       this._suggestions = result?.response?.items || [];
