@@ -13,9 +13,9 @@ A Lovelace shopping-list card for a Home Assistant `todo.*` entity, with add-ite
 
 ## How it works
 
-This card doesn't talk to OurGroceries directly. It reads and writes your list entirely through Home Assistant's standard `todo.*` services against whatever `entity:` you configure — normally the entity created by HA's built-in [OurGroceries integration](https://www.home-assistant.io/integrations/ourgroceries/), but it'll work against any `todo` entity from any source.
+This card doesn't talk to OurGroceries directly. It reads and writes your list entirely through Home Assistant's standard `todo.*` services against whatever `entity:` you configure — normally an entity from the companion [ourgroceries-sync](https://github.com/johro897/ourgroceries-sync) integration, but it'll work against any `todo` entity from any source (including HA's built-in [OurGroceries integration](https://www.home-assistant.io/integrations/ourgroceries/), if you're using that instead).
 
-The autocomplete suggestions come from a separate, optional companion integration: [ourgroceries-autocomplete](https://github.com/johro897/ourgroceries-autocomplete). It exposes your OurGroceries "master list" (the item history OurGroceries' own app uses for suggestions) as a service this card calls. Without it installed, the card still works fully — you just won't get suggestions while typing.
+The autocomplete suggestions come from a separate, optional companion integration: [ourgroceries-sync](https://github.com/johro897/ourgroceries-sync). It exposes your OurGroceries "master list" (the item history OurGroceries' own app uses for suggestions) as a service this card calls. Without it installed, the card still works fully — you just won't get suggestions while typing.
 
 ---
 
@@ -23,7 +23,7 @@ The autocomplete suggestions come from a separate, optional companion integratio
 
 - Checklist-style list: checkbox + item name, click to mark done/undone
 - Remove button per item (shown on hover)
-- Add-item field with native browser autocomplete, suggesting items from your OurGroceries history (requires [ourgroceries-autocomplete](https://github.com/johro897/ourgroceries-autocomplete))
+- Add-item field with native browser autocomplete, suggesting items from your OurGroceries history (requires [ourgroceries-sync](https://github.com/johro897/ourgroceries-sync))
 - Theme-aware styling, no external dependencies
 
 ---
@@ -65,14 +65,17 @@ title: Groceries   # optional — defaults to the entity's own friendly name
 ## Requirements
 
 - Home Assistant 2024.1 or newer (needs the `todo` domain's `get_items` service with a response)
-- A `todo.*` entity — typically from the [built-in OurGroceries integration](https://www.home-assistant.io/integrations/ourgroceries/)
-- Optional, for autocomplete: [ourgroceries-autocomplete](https://github.com/johro897/ourgroceries-autocomplete) installed and configured
+- A `todo.*` entity — typically from the companion [ourgroceries-sync](https://github.com/johro897/ourgroceries-sync) integration
+- Optional, for autocomplete: [ourgroceries-sync](https://github.com/johro897/ourgroceries-sync) installed and configured
 
 ---
 
 ## Changelog
 
-### v1.0.0
+### 1.1.0
+- Autocomplete now calls `ourgroceries_sync.get_suggestions` — the companion integration was renamed and expanded from `ourgroceries-autocomplete` to `ourgroceries-sync` (now a full `todo.*` sync integration, not just suggestions). No change needed here beyond the service domain: this card only ever talked to generic `todo.*` services, never to the companion integration's entities directly.
+
+### 1.0.0
 - Initial release
 - List view with add/check/remove via standard `todo.*` services
 - Add-item autocomplete sourced from `ourgroceries_autocomplete.get_suggestions`, degrades gracefully if that integration isn't installed
