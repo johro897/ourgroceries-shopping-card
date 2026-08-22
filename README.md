@@ -71,11 +71,14 @@ title: Groceries   # optional — defaults to the entity's own friendly name
 
 - Home Assistant 2024.1 or newer (needs the `todo` domain's `get_items` service with a response)
 - A `todo.*` entity — typically from the companion [ourgroceries-sync](https://github.com/johro897/ourgroceries-sync) integration
-- Optional, for category grouping and suggestions: [ourgroceries-sync](https://github.com/johro897/ourgroceries-sync) 1.1.1+ installed and configured
+- Optional, for category grouping and suggestions: [ourgroceries-sync](https://github.com/johro897/ourgroceries-sync) 1.1.2+ installed and configured
 
 ---
 
 ## Changelog
+
+### 1.2.2
+- Clicking a suggestion that has a note now actually keeps that note on the added item — previously it silently dropped, since `todo.add_item` (the only path available before) has no note field at all. Uses ourgroceries-sync's new `add_item` service instead, only when a note is present
 
 ### 1.2.1
 - List items now show their note (e.g. "125g") as subtext, sourced from the item's standard `description` field — needs ourgroceries-sync 1.1.1+. Read-only; no way to add or edit a note from the card yet (see [issue #5](https://github.com/johro897/ourgroceries-shopping-card/issues/5))

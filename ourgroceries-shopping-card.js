@@ -1,5 +1,5 @@
 /**
- * ourgroceries-shopping-card  v1.2.1
+ * ourgroceries-shopping-card  v1.2.2
  * Shopping-list card for a `todo.*` entity (e.g. from the companion
  * ourgroceries-sync integration, or any other todo.* source), with
  * add-item suggestions sourced from ourgroceries-sync's
@@ -208,6 +208,30 @@ class OurGroceriesShoppingCard extends HTMLElement {
     const value = text.trim();
     if (!value) return;
     await this._hass.callService("todo", "add_item", { item: value }, { entity_id: this._config.entity });
+    await this._loadItems();
+  }
+
+  // Only used when a suggestion carries a note — todo.add_item has no way
+  // to set one (would need SET_DESCRIPTION_ON_ITEM, which ourgroceries-sync
+  // deliberately doesn't declare, since that'd also imply description
+  // *editing*, which isn't actually supported — see ourgroceries-sync's
+  // CLAUDE.md). ourgroceries_sync.add_item bypasses todo.add_item entirely
+  // for this one case.
+  async _addItemWithNote(text, note) {
+    const value = text.trim();
+    if (!value) return;
+    try {
+      await this._hass.callService(
+        "ourgroceries_sync",
+        "add_item",
+        note ? { item: value, note } : { item: value },
+        { entity_id: this._config.entity }
+      );
+    } catch (e) {
+      // Companion service unavailable for some reason — still add the
+      // item, just without its note, rather than doing nothing.
+      await this._hass.callService("todo", "add_item", { item: value }, { entity_id: this._config.entity });
+    }
     await this._loadItems();
   }
 
@@ -453,7 +477,8 @@ class OurGroceriesShoppingCard extends HTMLElement {
       const row = e.target.closest(".suggestion-row");
       if (!row) return;
       e.preventDefault();
-      this._addItem(row.dataset.name);
+      const suggestion = this._suggestions.find((s) => s.name === row.dataset.name);
+      this._addItemWithNote(row.dataset.name, suggestion?.note || null);
       input.value = "";
       closeDropdown();
     });
