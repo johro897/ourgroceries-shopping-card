@@ -1,5 +1,5 @@
 /**
- * ourgroceries-shopping-card  v1.2.2
+ * ourgroceries-shopping-card  v1.3.0
  * Shopping-list card for a `todo.*` entity (e.g. from the companion
  * ourgroceries-sync integration, or any other todo.* source), with
  * add-item suggestions sourced from ourgroceries-sync's
@@ -12,10 +12,13 @@
  * flat ungrouped list) if ourgroceries-sync isn't installed, or if the
  * configured entity comes from a different todo.* source entirely.
  *
- * Configuration:
+ * Has a visual editor (entity/title/panel), or configure directly:
  *   type: custom:ourgroceries-shopping-card
  *   entity: todo.groceries   # required
  *   title: Groceries         # optional, defaults to the entity's own name
+ *   panel: false             # optional — two-column layout for a tablet/
+ *                             # panel-view dashboard (suggestions become an
+ *                             # always-visible column instead of a dropdown)
  */
 
 let INSTANCE_COUNT = 0;
@@ -33,6 +36,11 @@ const TRANSLATIONS = {
     empty: "Nothing on the list yet.",
     uncategorized: "Other",
     suggestions_hint: "From your OurGroceries history — click to add directly",
+    suggestions_header: "Suggestions",
+    no_suggestions: "No matches",
+    editor_entity: "Entity",
+    editor_title: "Title",
+    editor_panel: "Panel layout (two columns, for a tablet/panel-view dashboard)",
   },
   sv: {
     entity_required: "entity krävs",
@@ -45,6 +53,11 @@ const TRANSLATIONS = {
     empty: "Inget på listan än.",
     uncategorized: "Övrigt",
     suggestions_hint: "Från din OurGroceries-historik — klicka för att lägga till direkt",
+    suggestions_header: "Förslag",
+    no_suggestions: "Inga träffar",
+    editor_entity: "Entitet",
+    editor_title: "Titel",
+    editor_panel: "Panel-layout (två kolumner, för en surfplatta/panel-vy)",
   },
 };
 
@@ -82,6 +95,52 @@ function highlightMatch(name, query) {
   if (idx === -1) return esc(name);
   return `${esc(name.slice(0, idx))}<b>${esc(name.slice(idx, idx + query.length))}</b>${esc(name.slice(idx + query.length))}`;
 }
+
+// Shared between compact and panel layouts — the list itself (rows, category
+// group headers, suggestion rows) looks identical in both; only how the
+// add/suggestions area is arranged around it differs.
+const ROW_STYLES = `
+  .header { font-size: 16px; font-weight: 500; color: var(--primary-text-color); margin-bottom: 10px; }
+  .status { font-size: 13px; color: var(--secondary-text-color); padding: 12px 0; }
+  .status.error { color: var(--error-color, #db4437); }
+  .rows { display: flex; flex-direction: column; }
+
+  .group { display: flex; flex-direction: column; }
+  .group-header {
+    color: #fff; font-size: 12px; font-weight: 600; letter-spacing: .03em;
+    text-transform: uppercase; padding: 7px 12px; border-radius: 8px;
+    margin: 14px 0 4px;
+  }
+  .group:first-of-type .group-header { margin-top: 0; }
+
+  .row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 7px 0; border-bottom: 1px solid var(--divider-color, rgba(127,127,127,.2));
+  }
+  .rows .row:last-child, .group .row:last-child { border-bottom: none; }
+  .row input[type="checkbox"] { flex-shrink: 0; width: 18px; height: 18px; accent-color: var(--primary-color); cursor: pointer; }
+  .row .summary-block { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  .row .summary { font-size: 14px; color: var(--primary-text-color); word-break: break-word; }
+  .row .note { font-size: 11px; color: var(--secondary-text-color); }
+  .row.done .summary { color: var(--secondary-text-color); text-decoration: line-through; }
+  .row .remove {
+    flex-shrink: 0; border: none; background: transparent; cursor: pointer;
+    color: var(--secondary-text-color); font-size: 13px; padding: 4px 6px; border-radius: 6px;
+    opacity: 0; transition: opacity .15s, color .15s;
+  }
+  .row:hover .remove, .row .remove:focus-visible { opacity: 1; }
+  .row .remove:hover { color: var(--error-color, #db4437); }
+
+  .suggestion-row {
+    display: flex; align-items: baseline; gap: 8px;
+    padding: 10px 14px; font-size: 14px; color: var(--primary-text-color);
+    cursor: pointer; border-bottom: 1px solid var(--divider-color, rgba(127,127,127,.2));
+  }
+  .suggestion-row:last-child { border-bottom: none; }
+  .suggestion-row:hover { background: var(--secondary-background-color, rgba(127,127,127,.08)); }
+  .suggestion-name b { font-weight: 700; }
+  .suggestion-note { font-size: 12px; color: var(--secondary-text-color); }
+`;
 
 class OurGroceriesShoppingCard extends HTMLElement {
   constructor() {
@@ -195,12 +254,18 @@ class OurGroceriesShoppingCard extends HTMLElement {
       this._suggestions = [];
     }
     this._suggestionsLoaded = true;
-    // Suggestions load asynchronously after the card mounts — if the user
-    // already focused the add-item field before they arrived, refresh the
-    // (until-now empty) dropdown now that there's something to show.
-    const input = this.shadowRoot.querySelector(".add-row input");
-    if (input && this.shadowRoot.activeElement === input) {
-      this._updateSuggestionsDropdown(input.value);
+    // Suggestions load asynchronously after the card mounts. In panel mode
+    // the suggestions list is always visible, so just refresh it outright;
+    // in compact mode it's a dropdown that only matters if the user already
+    // focused the add-item field before the suggestions arrived.
+    if (this._config?.panel) {
+      const input = this.shadowRoot.querySelector(".panel-add-row input");
+      this._updatePanelSuggestions(input?.value || "");
+    } else {
+      const input = this.shadowRoot.querySelector(".add-row input");
+      if (input && this.shadowRoot.activeElement === input) {
+        this._updateSuggestionsDropdown(input.value);
+      }
     }
   }
 
@@ -306,23 +371,28 @@ class OurGroceriesShoppingCard extends HTMLElement {
       .join("");
   }
 
-  _suggestionsMarkup(query) {
-    const q = query.trim();
-    const matches = this._suggestions
-      .filter((s) => !q || s.name.toLowerCase().includes(q.toLowerCase()))
-      .slice(0, 8);
-    if (matches.length === 0) return "";
-    const rows = matches
+  _filteredSuggestions(query, limit) {
+    const q = query.trim().toLowerCase();
+    return this._suggestions.filter((s) => !q || s.name.toLowerCase().includes(q)).slice(0, limit);
+  }
+
+  _suggestionRowsHtml(matches, query) {
+    return matches
       .map(
         (s) => `
           <div class="suggestion-row" data-name="${esc(s.name)}">
-            <span class="suggestion-name">${highlightMatch(s.name, q)}</span>
+            <span class="suggestion-name">${highlightMatch(s.name, query)}</span>
             ${s.note ? `<span class="suggestion-note">${esc(s.note)}</span>` : ""}
           </div>`
       )
       .join("");
+  }
+
+  _suggestionsMarkup(query) {
+    const matches = this._filteredSuggestions(query, 8);
+    if (matches.length === 0) return "";
     return `
-      <div class="suggestions-list">${rows}</div>
+      <div class="suggestions-list">${this._suggestionRowsHtml(matches, query.trim())}</div>
       <div class="suggestions-hint">${t(this._hass, "suggestions_hint")}</div>`;
   }
 
@@ -334,54 +404,48 @@ class OurGroceriesShoppingCard extends HTMLElement {
     box.style.display = markup ? "block" : "none";
   }
 
+  // Panel mode's suggestions column has no visibility toggle — it's always
+  // shown — and no cap worth mentioning, since there's a real scrollable
+  // area for it rather than a small floating dropdown.
+  _panelSuggestionsMarkup(query) {
+    const matches = this._filteredSuggestions(query, 200);
+    if (matches.length === 0) return `<div class="status">${t(this._hass, "no_suggestions")}</div>`;
+    return this._suggestionRowsHtml(matches, query.trim());
+  }
+
+  _updatePanelSuggestions(query) {
+    const list = this.shadowRoot.querySelector(".panel-suggest-list");
+    if (list) list.innerHTML = this._panelSuggestionsMarkup(query);
+  }
+
   _render() {
-    const cfg = this._config;
-    if (!cfg) return;
+    if (!this._config) return;
+    if (this._config.panel) {
+      this._renderPanel();
+    } else {
+      this._renderCompact();
+    }
+  }
 
-    const title = esc(cfg.title || this._hass?.states[cfg.entity]?.attributes?.friendly_name || "");
-
-    const body = this._loading
+  _listBody() {
+    return this._loading
       ? `<div class="status">${t(this._hass, "loading")}</div>`
       : this._error
         ? `<div class="status error">${t(this._hass, "error")}</div>`
         : this._items.length === 0
           ? `<div class="status">${t(this._hass, "empty")}</div>`
           : this._renderList();
+  }
+
+  _renderCompact() {
+    const cfg = this._config;
+    const title = esc(cfg.title || this._hass?.states[cfg.entity]?.attributes?.friendly_name || "");
 
     this.shadowRoot.innerHTML = `
       <style>
         :host { display: block; }
         ha-card { padding: 14px 16px 16px; }
-        .header { font-size: 16px; font-weight: 500; color: var(--primary-text-color); margin-bottom: 10px; }
-        .status { font-size: 13px; color: var(--secondary-text-color); padding: 12px 0; }
-        .status.error { color: var(--error-color, #db4437); }
-        .rows { display: flex; flex-direction: column; }
-
-        .group { display: flex; flex-direction: column; }
-        .group-header {
-          color: #fff; font-size: 12px; font-weight: 600; letter-spacing: .03em;
-          text-transform: uppercase; padding: 7px 12px; border-radius: 8px;
-          margin: 14px 0 4px;
-        }
-        .group:first-of-type .group-header { margin-top: 0; }
-
-        .row {
-          display: flex; align-items: center; gap: 10px;
-          padding: 7px 0; border-bottom: 1px solid var(--divider-color, rgba(127,127,127,.2));
-        }
-        .rows .row:last-child, .group .row:last-child { border-bottom: none; }
-        .row input[type="checkbox"] { flex-shrink: 0; width: 18px; height: 18px; accent-color: var(--primary-color); cursor: pointer; }
-        .row .summary-block { flex: 1; display: flex; flex-direction: column; min-width: 0; }
-        .row .summary { font-size: 14px; color: var(--primary-text-color); word-break: break-word; }
-        .row .note { font-size: 11px; color: var(--secondary-text-color); }
-        .row.done .summary { color: var(--secondary-text-color); text-decoration: line-through; }
-        .row .remove {
-          flex-shrink: 0; border: none; background: transparent; cursor: pointer;
-          color: var(--secondary-text-color); font-size: 13px; padding: 4px 6px; border-radius: 6px;
-          opacity: 0; transition: opacity .15s, color .15s;
-        }
-        .row:hover .remove, .row .remove:focus-visible { opacity: 1; }
-        .row .remove:hover { color: var(--error-color, #db4437); }
+        ${ROW_STYLES}
 
         .add-row { display: flex; gap: 8px; margin-top: 14px; position: relative; }
         .add-row input {
@@ -408,15 +472,6 @@ class OurGroceriesShoppingCard extends HTMLElement {
           overflow: hidden; z-index: 1;
         }
         .suggestions-list { max-height: 240px; overflow-y: auto; }
-        .suggestion-row {
-          display: flex; align-items: baseline; gap: 8px;
-          padding: 10px 14px; font-size: 14px; color: var(--primary-text-color);
-          cursor: pointer; border-bottom: 1px solid var(--divider-color, rgba(127,127,127,.2));
-        }
-        .suggestion-row:last-child { border-bottom: none; }
-        .suggestion-row:hover { background: var(--secondary-background-color, rgba(127,127,127,.08)); }
-        .suggestion-name b { font-weight: 700; }
-        .suggestion-note { font-size: 12px; color: var(--secondary-text-color); }
         .suggestions-hint {
           padding: 6px 14px; font-size: 11px; color: var(--secondary-text-color);
           border-top: 1px solid var(--divider-color, rgba(127,127,127,.2));
@@ -424,12 +479,63 @@ class OurGroceriesShoppingCard extends HTMLElement {
       </style>
       <ha-card>
         ${title ? `<div class="header">${title}</div>` : ""}
-        ${body}
+        ${this._listBody()}
         <form class="add-row">
           <div class="suggestions-box"></div>
           <input type="text" placeholder="${t(this._hass, "add_placeholder")}" aria-label="${t(this._hass, "add_item")}" autocomplete="off">
           <button type="submit">${t(this._hass, "add")}</button>
         </form>
+      </ha-card>
+    `;
+
+    this._bindEvents();
+  }
+
+  _renderPanel() {
+    const cfg = this._config;
+    const title = esc(cfg.title || this._hass?.states[cfg.entity]?.attributes?.friendly_name || "");
+
+    this.shadowRoot.innerHTML = `
+      <style>
+        :host { display: block; }
+        ha-card { padding: 14px 16px 16px; }
+        ${ROW_STYLES}
+
+        .panel-columns { display: flex; gap: 24px; align-items: flex-start; }
+        .panel-col { flex: 1; min-width: 0; }
+
+        .panel-add-row { display: flex; gap: 8px; margin-bottom: 14px; }
+        .panel-add-row input {
+          flex: 1; min-width: 0; padding: 8px 10px; border-radius: 8px;
+          border: 1px solid var(--divider-color, rgba(127,127,127,.3));
+          background: var(--card-background-color, transparent);
+          color: var(--primary-text-color); font-size: 14px; font-family: inherit;
+        }
+        .panel-add-row input:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 1px; }
+        .panel-add-row button {
+          flex-shrink: 0; padding: 8px 14px; border-radius: 8px; border: none;
+          background: var(--primary-color); color: var(--text-primary-color, #fff);
+          font-size: 14px; font-family: inherit; cursor: pointer;
+        }
+        .panel-add-row button:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 2px; }
+
+        .panel-suggest-list { display: flex; flex-direction: column; max-height: 360px; overflow-y: auto; }
+      </style>
+      <ha-card>
+        <div class="panel-columns">
+          <div class="panel-col">
+            ${title ? `<div class="header">${title}</div>` : ""}
+            ${this._listBody()}
+          </div>
+          <div class="panel-col">
+            <form class="panel-add-row">
+              <input type="text" placeholder="${t(this._hass, "add_placeholder")}" aria-label="${t(this._hass, "add_item")}" autocomplete="off">
+              <button type="submit">${t(this._hass, "add")}</button>
+            </form>
+            <div class="header">${t(this._hass, "suggestions_header")}</div>
+            <div class="panel-suggest-list">${this._panelSuggestionsMarkup("")}</div>
+          </div>
+        </div>
       </ha-card>
     `;
 
@@ -450,6 +556,14 @@ class OurGroceriesShoppingCard extends HTMLElement {
       });
     });
 
+    if (this._config.panel) {
+      this._bindPanelAddEvents();
+    } else {
+      this._bindCompactAddEvents();
+    }
+  }
+
+  _bindCompactAddEvents() {
     const form = this.shadowRoot.querySelector(".add-row");
     if (!form) return;
     const input = form.querySelector("input");
@@ -483,9 +597,91 @@ class OurGroceriesShoppingCard extends HTMLElement {
       closeDropdown();
     });
   }
+
+  _bindPanelAddEvents() {
+    const form = this.shadowRoot.querySelector(".panel-add-row");
+    if (!form) return;
+    const input = form.querySelector("input");
+    const list = this.shadowRoot.querySelector(".panel-suggest-list");
+
+    form.addEventListener("submit", (e) => {
+      e.preventDefault();
+      this._addItem(input.value);
+      input.value = "";
+      this._updatePanelSuggestions("");
+    });
+
+    input.addEventListener("input", () => this._updatePanelSuggestions(input.value));
+
+    // No focus/blur dance needed here — the list is always visible, it just
+    // filters as you type. mousedown (not click) still matters: it fires
+    // before the input would blur, keeping the picked value intact.
+    list.addEventListener("mousedown", (e) => {
+      const row = e.target.closest(".suggestion-row");
+      if (!row) return;
+      e.preventDefault();
+      const suggestion = this._suggestions.find((s) => s.name === row.dataset.name);
+      this._addItemWithNote(row.dataset.name, suggestion?.note || null);
+      input.value = "";
+      this._updatePanelSuggestions("");
+    });
+  }
+
+  // ─── Visual editor ─────────────────────────────────────────────────────
+
+  static getConfigElement() {
+    return document.createElement("ourgroceries-shopping-card-editor");
+  }
+
+  static getStubConfig(hass) {
+    const entity = Object.keys(hass.states).find((e) => e.startsWith("todo.")) || "";
+    return { entity, panel: false };
+  }
+}
+
+const EDITOR_SCHEMA = [
+  { name: "entity", required: true, selector: { entity: { domain: "todo" } } },
+  { name: "title", selector: { text: {} } },
+  { name: "panel", selector: { boolean: {} } },
+];
+
+class OurGroceriesShoppingCardEditor extends HTMLElement {
+  setConfig(config) {
+    this._config = config;
+    this._render();
+  }
+
+  set hass(hass) {
+    this._hass = hass;
+    this._render();
+  }
+
+  _render() {
+    if (!this._hass || !this._config) return;
+
+    if (!this._form) {
+      this._form = document.createElement("ha-form");
+      this._form.addEventListener("value-changed", (ev) => {
+        ev.stopPropagation();
+        const event = new CustomEvent("config-changed", {
+          detail: { config: ev.detail.value },
+          bubbles: true,
+          composed: true,
+        });
+        this.dispatchEvent(event);
+      });
+      this.appendChild(this._form);
+    }
+
+    this._form.hass = this._hass;
+    this._form.data = this._config;
+    this._form.schema = EDITOR_SCHEMA;
+    this._form.computeLabel = (schema) => t(this._hass, `editor_${schema.name}`);
+  }
 }
 
 customElements.define("ourgroceries-shopping-card", OurGroceriesShoppingCard);
+customElements.define("ourgroceries-shopping-card-editor", OurGroceriesShoppingCardEditor);
 window.customCards = window.customCards || [];
 window.customCards.push({
   type: "ourgroceries-shopping-card",

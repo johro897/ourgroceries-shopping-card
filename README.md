@@ -25,6 +25,8 @@ Category grouping and suggestions both come from the separate, optional companio
 - Items grouped under a category header bar (color assigned per category name, not from OurGroceries — see "How categories work" below), when the companion integration provides category data
 - Remove button per item (shown on hover)
 - Add-item field with a click-to-add suggestions dropdown, sourced from your OurGroceries history — clicking a suggestion adds it immediately, no separate Add step (requires [ourgroceries-sync](https://github.com/johro897/ourgroceries-sync))
+- Visual editor — entity, title, and panel layout are all configurable from the dashboard UI, YAML is optional
+- Optional panel layout for a tablet/panel-view dashboard: two columns, list on the left, an always-visible (not dropdown) suggestions column on the right that live-filters as you type
 - Theme-aware styling, no external dependencies
 
 ## How categories work
@@ -54,16 +56,26 @@ Category *names* come from your OurGroceries account. Category *colors* don't �
 
 ## Configuration
 
+Editable visually (Edit Dashboard → Add Card → search for this card, or Edit a card already on your dashboard), or in YAML:
+
 ```yaml
 type: custom:ourgroceries-shopping-card
 entity: todo.groceries
 title: Groceries   # optional — defaults to the entity's own friendly name
+panel: false       # optional — two-column layout, see "Panel layout" below
 ```
 
 | Option | Type | Default | Description |
 |---|---|---|---|
 | `entity` | string | **required** | A `todo.*` entity |
 | `title` | string | *(entity's friendly name)* | Card title |
+| `panel` | boolean | `false` | Two-column layout for a tablet/panel-view dashboard — see below |
+
+### Panel layout
+
+Set `panel: true` on a card placed in a Home Assistant **panel view** (a dashboard view with a single card filling the whole screen — good for a wall-mounted tablet). Splits the card into two columns: your list on the left, and a suggestions column on the right that's always visible (rather than a dropdown that only appears while typing) and live-filters as you type in the add-item field, which lives at the top of that column.
+
+This is a manual toggle, not auto-detected — Home Assistant's frontend has no supported way for a card to know which kind of view it's in, so `panel:` just tells the card to use the wider layout regardless of where you actually place it. It looks best in an actual panel view; nothing stops you from using it elsewhere if a wide two-column layout happens to suit your dashboard.
 
 ---
 
@@ -76,6 +88,11 @@ title: Groceries   # optional — defaults to the entity's own friendly name
 ---
 
 ## Changelog
+
+### 1.3.0
+- First visual editor for this card (entity, title, panel — `ha-form`-based). Previously YAML-only.
+- New `panel` option: two-column layout for tablet/panel-view dashboards. The add-item field and its suggestions move to the top of a dedicated, always-visible right-hand column instead of a dropdown, since in a two-column layout that column has room for a real, permanently-visible browsable list.
+- Compact (non-panel) layout is unchanged.
 
 ### 1.2.2
 - Clicking a suggestion that has a note now actually keeps that note on the added item — previously it silently dropped, since `todo.add_item` (the only path available before) has no note field at all. Uses ourgroceries-sync's new `add_item` service instead, only when a note is present
