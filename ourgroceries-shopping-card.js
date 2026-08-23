@@ -1,5 +1,5 @@
 /**
- * ourgroceries-shopping-card  v1.3.0
+ * ourgroceries-shopping-card  v1.3.1
  * Shopping-list card for a `todo.*` entity (e.g. from the companion
  * ourgroceries-sync integration, or any other todo.* source), with
  * add-item suggestions sourced from ourgroceries-sync's
@@ -34,7 +34,7 @@ const TRANSLATIONS = {
     loading: "Loading…",
     error: "Could not load this list. Check that the entity ID is correct.",
     empty: "Nothing on the list yet.",
-    uncategorized: "Other",
+    uncategorized: "No category",
     suggestions_hint: "From your OurGroceries history — click to add directly",
     suggestions_header: "Suggestions",
     no_suggestions: "No matches",
@@ -51,7 +51,7 @@ const TRANSLATIONS = {
     loading: "Laddar…",
     error: "Kunde inte läsa listan. Kontrollera att entity-id stämmer.",
     empty: "Inget på listan än.",
-    uncategorized: "Övrigt",
+    uncategorized: "Ingen kategori",
     suggestions_hint: "Från din OurGroceries-historik — klicka för att lägga till direkt",
     suggestions_header: "Förslag",
     no_suggestions: "Inga träffar",

@@ -31,7 +31,9 @@ Category grouping and suggestions both come from the separate, optional companio
 
 ## How categories work
 
-Category *names* come from your OurGroceries account. Category *colors* don't — OurGroceries' API doesn't expose one, so this card assigns a color to each category by hashing its name, consistently across reloads. Items with no category are grouped under a generic "Other" bucket at the end of the list.
+Category *names* come from your OurGroceries account. Category *colors* don't — OurGroceries' API doesn't expose one, so this card assigns a color to each category by hashing its name, consistently across reloads.
+
+Items with genuinely no category at all are grouped under a "No category" bucket at the end of the list — this is a bucket the card makes up, not something from OurGroceries. In practice you'll rarely see it: OurGroceries usually auto-assigns *some* real category (which might itself be named something like "Other" or "Miscellaneous" in your account) to items it can't confidently place, and that's a real category with its own color like any other, distinct from this card's fallback bucket. If you see both a real "Other"-ish category *and* "No category" on the same list, that's expected — they're two different things that happen to sound similar.
 
 ---
 
@@ -88,6 +90,9 @@ This is a manual toggle, not auto-detected — Home Assistant's frontend has no 
 ---
 
 ## Changelog
+
+### 1.3.1
+- Renamed the card's own "uncategorized items" fallback bucket from "Other" to "No category" — it was easy to confuse with a real OurGroceries category that also happens to be named something like "Other," since OurGroceries usually auto-assigns a real category to items rather than leaving them truly uncategorized
 
 ### 1.3.0
 - First visual editor for this card (entity, title, panel — `ha-form`-based). Previously YAML-only.
