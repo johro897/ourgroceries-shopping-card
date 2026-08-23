@@ -85,38 +85,21 @@ This is a manual toggle, not auto-detected — Home Assistant's frontend has no 
 
 - Home Assistant 2024.1 or newer (needs the `todo` domain's `get_items` service with a response)
 - A `todo.*` entity — typically from the companion [ourgroceries-sync](https://github.com/johro897/ourgroceries-sync) integration
-- Optional, for category grouping and suggestions: [ourgroceries-sync](https://github.com/johro897/ourgroceries-sync) 1.1.2+ installed and configured
+- Optional, for category grouping and suggestions: [ourgroceries-sync](https://github.com/johro897/ourgroceries-sync) 1.2.0+ installed and configured
 
 ---
 
 ## Changelog
 
-### 1.3.1
-- Renamed the card's own "uncategorized items" fallback bucket from "Other" to "No category" — it was easy to confuse with a real OurGroceries category that also happens to be named something like "Other," since OurGroceries usually auto-assigns a real category to items rather than leaving them truly uncategorized
+### 1.4.0 — First stable release
 
-### 1.3.0
-- First visual editor for this card (entity, title, panel — `ha-form`-based). Previously YAML-only.
-- New `panel` option: two-column layout for tablet/panel-view dashboards. The add-item field and its suggestions move to the top of a dedicated, always-visible right-hand column instead of a dropdown, since in a two-column layout that column has room for a real, permanently-visible browsable list.
-- Compact (non-panel) layout is unchanged.
+Went through several pre-release betas (`beta-1.0.0` through `beta-1.3.1`, still published on the [releases page](https://github.com/johro897/ourgroceries-shopping-card/releases) as history) before this first stable release:
 
-### 1.2.2
-- Clicking a suggestion that has a note now actually keeps that note on the added item — previously it silently dropped, since `todo.add_item` (the only path available before) has no note field at all. Uses ourgroceries-sync's new `add_item` service instead, only when a note is present
-
-### 1.2.1
-- List items now show their note (e.g. "125g") as subtext, sourced from the item's standard `description` field — needs ourgroceries-sync 1.1.1+. Read-only; no way to add or edit a note from the card yet (see [issue #5](https://github.com/johro897/ourgroceries-shopping-card/issues/5))
-
-### 1.2.0
-- Items now group under a category header bar when the companion integration provides category data (new `get_categories` call), falling back to a flat list otherwise
-- Replaced the native `<datalist>` autocomplete with a custom dropdown: clicking a suggestion now adds it immediately, no separate Add step. Native datalist had no reliable way to detect "user clicked a suggestion" versus "user typed matching text," only a same-text heuristic
-- Suggestions now show an item's note (e.g. "125g") as subtext, from `get_suggestions`' new `note` field
-
-### 1.1.0
-- Autocomplete now calls `ourgroceries_sync.get_suggestions` — the companion integration was renamed and expanded from `ourgroceries-autocomplete` to `ourgroceries-sync` (now a full `todo.*` sync integration, not just suggestions). No change needed here beyond the service domain: this card only ever talked to generic `todo.*` services, never to the companion integration's entities directly.
-
-### 1.0.0
-- Initial release
-- List view with add/check/remove via standard `todo.*` services
-- Add-item autocomplete sourced from `ourgroceries_autocomplete.get_suggestions`, degrades gracefully if that integration isn't installed
+- Checklist-style list, grouped under category header bars when [ourgroceries-sync](https://github.com/johro897/ourgroceries-sync) provides category data — falls back to a flat list otherwise. Items with no category land in a "No category" bucket, kept visually distinct from any real OurGroceries category that happens to be named similarly
+- Click-to-add suggestions (a custom dropdown, not native `<datalist>` — clicking adds immediately, no separate Add step), with each suggestion's note (e.g. "125g") shown as subtext and carried through onto the added item
+- Item notes shown as subtext in the list itself, read-only for now (see [issue #5](https://github.com/johro897/ourgroceries-shopping-card/issues/5))
+- Visual editor (entity, title, panel) — previously YAML-only
+- Optional `panel` layout for a tablet/panel-view dashboard: two columns, an always-visible live-filtered suggestions column instead of a dropdown
 - English and Swedish UI
 
 ---
