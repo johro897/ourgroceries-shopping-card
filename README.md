@@ -3,11 +3,9 @@
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/hacs/integration)
 [![GitHub release](https://img.shields.io/github/release/johro897/ourgroceries-shopping-card.svg)](https://github.com/johro897/ourgroceries-shopping-card/releases)
 
-<img src="images/icon.png" width="96" alt="">
-
 A Lovelace shopping-list card for a Home Assistant `todo.*` entity: items grouped by category, with a click-to-add suggestions dropdown sourced from your OurGroceries item history.
 
-*(Icon only for now — a real screenshot will replace it here once this has been tested in a live dashboard.)*
+![Card overview — category grouping, item notes, and the collapsed crossed-off section](screenshots/overview_2.png)
 
 ---
 
@@ -30,6 +28,8 @@ Category grouping and suggestions both come from the separate, optional companio
 - Visual editor — entity, title, and panel layout are all configurable from the dashboard UI, YAML is optional
 - Optional panel layout for a tablet/panel-view dashboard: two columns, list on the left, an always-visible (not dropdown) suggestions column on the right that live-filters as you type
 - Theme-aware styling, no external dependencies
+
+![The expanded crossed-off section — uncheck, delete one, or clear all at once](screenshots/crossed_off.png)
 
 ## How categories work
 
@@ -62,6 +62,8 @@ Items with genuinely no category at all are grouped under a "No category" bucket
 
 Editable visually (Edit Dashboard → Add Card → search for this card, or Edit a card already on your dashboard), or in YAML:
 
+![Visual config editor](screenshots/config.png)
+
 ```yaml
 type: custom:ourgroceries-shopping-card
 entity: todo.groceries
@@ -78,6 +80,8 @@ panel: false       # optional — two-column layout, see "Panel layout" below
 ### Panel layout
 
 Set `panel: true` on a card placed in a Home Assistant **panel view** (a dashboard view with a single card filling the whole screen — good for a wall-mounted tablet). Splits the card into two columns: your list on the left, and a suggestions column on the right that's always visible (rather than a dropdown that only appears while typing) and live-filters as you type in the add-item field, which lives at the top of that column.
+
+![Panel layout — list on the left, live-filtered suggestions on the right](screenshots/panel.png)
 
 This is a manual toggle, not auto-detected — Home Assistant's frontend has no supported way for a card to know which kind of view it's in, so `panel:` just tells the card to use the wider layout regardless of where you actually place it. It looks best in an actual panel view; nothing stops you from using it elsewhere if a wide two-column layout happens to suit your dashboard.
 
