@@ -93,7 +93,7 @@ This is a manual toggle, not auto-detected — Home Assistant's frontend has no 
 
 ## Changelog
 
-### 1.5.0 (in progress — heading may be renamed at release, see project CLAUDE.md)
+### 1.5.0
 
 **Hide completed items by default** — [#9](https://github.com/johro897/ourgroceries-shopping-card/issues/9)
 - Checking an item off now removes it from the main list immediately instead of leaving it struck through indefinitely. A collapsed "N crossed off" section below the list holds them — expand it to uncheck an item back onto the main list, delete individual crossed-off items, or clear all of them at once
