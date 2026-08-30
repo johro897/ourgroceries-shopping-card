@@ -95,6 +95,17 @@ This is a manual toggle, not auto-detected — Home Assistant's frontend has no 
 
 ---
 
+## Troubleshooting
+
+| Problem | Solution |
+|---|---|
+| Card not found / blank card | Verify the resource is registered under **Settings → Dashboards → Resources** and hard-refresh the browser (`Ctrl/Cmd + Shift + R`) |
+| No suggestions dropdown / panel column always empty | Requires [ourgroceries-sync](https://github.com/johro897/ourgroceries-sync) installed and configured — without it, or against a `todo.*` entity from a different source, the card falls back to no suggestions by design |
+| List shows as a flat, ungrouped list instead of category headers | Same requirement as suggestions — category grouping also needs ourgroceries-sync installed against this exact entity |
+| A note doesn't appear under an item I just typed | Notes on new items use the comma syntax — type `Item, note` (e.g. `Milk, 1.5%`); plain text with no comma adds the item with no note |
+| "N crossed off" section doesn't appear | It only shows once at least one item is checked off — there's nothing to collapse until then |
+| Panel layout doesn't show two columns | Requires `panel: true` in the card config — see [Panel layout](#panel-layout). Looks best in an actual HA panel view but works anywhere |
+
 ## Changelog
 
 ### 1.5.0
