@@ -22,6 +22,7 @@ Category grouping and suggestions both come from the separate, optional companio
 ## Features
 
 - Checklist-style list: checkbox + item name, click to mark done/undone
+- Crossed-off items are hidden from the main list by default (this card is for planning, not a shopping log) — a collapsed "N crossed off" section holds them, with an uncheck action and a delete action (per item or all at once), so an everyday checkbox tap is never destructive
 - Items grouped under a category header bar (color assigned per category name, not from OurGroceries — see "How categories work" below), when the companion integration provides category data
 - Remove button per item (shown on hover)
 - Add-item field with a click-to-add suggestions dropdown, sourced from your OurGroceries history — clicking a suggestion adds it immediately, no separate Add step (requires [ourgroceries-sync](https://github.com/johro897/ourgroceries-sync))
@@ -90,6 +91,12 @@ This is a manual toggle, not auto-detected — Home Assistant's frontend has no 
 ---
 
 ## Changelog
+
+### 1.5.0 (in progress — heading may be renamed at release, see project CLAUDE.md)
+
+**Hide completed items by default** — [#9](https://github.com/johro897/ourgroceries-shopping-card/issues/9)
+- Checking an item off now removes it from the main list immediately instead of leaving it struck through indefinitely. A collapsed "N crossed off" section below the list holds them — expand it to uncheck an item back onto the main list, delete individual crossed-off items, or clear all of them at once
+- Delete only ever happens from inside that section, never from the main list's checkbox — an everyday tap can never be destructive
 
 ### 1.4.0 — First stable release
 
