@@ -3,11 +3,9 @@
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/hacs/integration)
 [![GitHub release](https://img.shields.io/github/release/johro897/ourgroceries-shopping-card.svg)](https://github.com/johro897/ourgroceries-shopping-card/releases)
 
-<img src="images/icon.png" width="96" alt="">
-
 A Lovelace shopping-list card for a Home Assistant `todo.*` entity: items grouped by category, with a click-to-add suggestions dropdown sourced from your OurGroceries item history.
 
-*(Icon only for now — a real screenshot will replace it here once this has been tested in a live dashboard.)*
+![Card overview — category grouping, item notes, and the collapsed crossed-off section](screenshots/overview_2.png)
 
 ---
 
@@ -22,12 +20,16 @@ Category grouping and suggestions both come from the separate, optional companio
 ## Features
 
 - Checklist-style list: checkbox + item name, click to mark done/undone
+- Crossed-off items are hidden from the main list by default (this card is for planning, not a shopping log) — a collapsed "N crossed off" section holds them, with an uncheck action and a delete action (per item or all at once), so an everyday checkbox tap is never destructive
 - Items grouped under a category header bar (color assigned per category name, not from OurGroceries — see "How categories work" below), when the companion integration provides category data
 - Remove button per item (shown on hover)
 - Add-item field with a click-to-add suggestions dropdown, sourced from your OurGroceries history — clicking a suggestion adds it immediately, no separate Add step (requires [ourgroceries-sync](https://github.com/johro897/ourgroceries-sync))
+- Type a note along with a new item using a comma, e.g. `Milk, 1.5%` — shown as subtext under the item, same as a suggestion's note (requires [ourgroceries-sync](https://github.com/johro897/ourgroceries-sync); editing a note on an existing item isn't supported yet, see [issue #10](https://github.com/johro897/ourgroceries-shopping-card/issues/10))
 - Visual editor — entity, title, and panel layout are all configurable from the dashboard UI, YAML is optional
 - Optional panel layout for a tablet/panel-view dashboard: two columns, list on the left, an always-visible (not dropdown) suggestions column on the right that live-filters as you type
 - Theme-aware styling, no external dependencies
+
+![The expanded crossed-off section — uncheck, delete one, or clear all at once](screenshots/crossed_off.png)
 
 ## How categories work
 
@@ -60,6 +62,8 @@ Items with genuinely no category at all are grouped under a "No category" bucket
 
 Editable visually (Edit Dashboard → Add Card → search for this card, or Edit a card already on your dashboard), or in YAML:
 
+![Visual config editor](screenshots/config.png)
+
 ```yaml
 type: custom:ourgroceries-shopping-card
 entity: todo.groceries
@@ -77,6 +81,8 @@ panel: false       # optional — two-column layout, see "Panel layout" below
 
 Set `panel: true` on a card placed in a Home Assistant **panel view** (a dashboard view with a single card filling the whole screen — good for a wall-mounted tablet). Splits the card into two columns: your list on the left, and a suggestions column on the right that's always visible (rather than a dropdown that only appears while typing) and live-filters as you type in the add-item field, which lives at the top of that column.
 
+![Panel layout — list on the left, live-filtered suggestions on the right](screenshots/panel.png)
+
 This is a manual toggle, not auto-detected — Home Assistant's frontend has no supported way for a card to know which kind of view it's in, so `panel:` just tells the card to use the wider layout regardless of where you actually place it. It looks best in an actual panel view; nothing stops you from using it elsewhere if a wide two-column layout happens to suit your dashboard.
 
 ---
@@ -90,6 +96,16 @@ This is a manual toggle, not auto-detected — Home Assistant's frontend has no 
 ---
 
 ## Changelog
+
+### 1.5.0
+
+**Hide completed items by default** — [#9](https://github.com/johro897/ourgroceries-shopping-card/issues/9)
+- Checking an item off now removes it from the main list immediately instead of leaving it struck through indefinitely. A collapsed "N crossed off" section below the list holds them — expand it to uncheck an item back onto the main list, delete individual crossed-off items, or clear all of them at once
+- Delete only ever happens from inside that section, never from the main list's checkbox — an everyday tap can never be destructive
+
+**Add a note when typing a new item** — [#5](https://github.com/johro897/ourgroceries-shopping-card/issues/5)
+- The add-item field now accepts a comma-separated note, e.g. `Milk, 1.5%` — shown as subtext under the item, same as a suggestion's note
+- Scoped to create-time only. Editing a note on an item that already exists needs the real OurGroceries API confirmed to support it first — split off to [#10](https://github.com/johro897/ourgroceries-shopping-card/issues/10)
 
 ### 1.4.0 — First stable release
 

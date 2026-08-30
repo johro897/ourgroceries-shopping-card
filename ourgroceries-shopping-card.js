@@ -27,7 +27,7 @@ const DEFAULT_LANG = "en";
 const TRANSLATIONS = {
   en: {
     entity_required: "entity is required",
-    add_placeholder: "Add an item…",
+    add_placeholder: "e.g. Milk, 1.5%",
     add_item: "Add item",
     add: "Add",
     remove: "Remove",
@@ -38,13 +38,16 @@ const TRANSLATIONS = {
     suggestions_hint: "From your OurGroceries history — click to add directly",
     suggestions_header: "Suggestions",
     no_suggestions: "No matches",
+    all_done: "All done!",
+    completed_count: "{n} crossed off",
+    clear_completed: "Clear crossed off",
     editor_entity: "Entity",
     editor_title: "Title",
     editor_panel: "Panel layout (two columns, for a tablet/panel-view dashboard)",
   },
   sv: {
     entity_required: "entity krävs",
-    add_placeholder: "Lägg till en vara…",
+    add_placeholder: "t.ex. Mjölk, 1.5%",
     add_item: "Lägg till vara",
     add: "Lägg till",
     remove: "Ta bort",
@@ -55,6 +58,9 @@ const TRANSLATIONS = {
     suggestions_hint: "Från din OurGroceries-historik — klicka för att lägga till direkt",
     suggestions_header: "Förslag",
     no_suggestions: "Inga träffar",
+    all_done: "Allt avklarat!",
+    completed_count: "{n} avbockade",
+    clear_completed: "Rensa avbockade",
     editor_entity: "Entitet",
     editor_title: "Titel",
     editor_panel: "Panel-layout (två kolumner, för en surfplatta/panel-vy)",
@@ -67,10 +73,14 @@ const TRANSLATIONS = {
 // from OurGroceries.
 const CATEGORY_HUES = [210, 55, 300, 140, 20, 260];
 
-function t(hass, key) {
+function t(hass, key, replacements) {
   const raw = (hass?.locale?.language || hass?.language || DEFAULT_LANG).toLowerCase();
   const lang = TRANSLATIONS[raw.split("-")[0]] ? raw.split("-")[0] : DEFAULT_LANG;
-  return TRANSLATIONS[lang][key] ?? TRANSLATIONS[DEFAULT_LANG][key] ?? key;
+  const str = TRANSLATIONS[lang][key] ?? TRANSLATIONS[DEFAULT_LANG][key] ?? key;
+  if (!replacements) return str;
+  return str.replace(/\{([^}]+)\}/g, (match, k) =>
+    Object.prototype.hasOwnProperty.call(replacements, k) ? replacements[k] : match
+  );
 }
 
 function esc(str) {
@@ -140,6 +150,22 @@ const ROW_STYLES = `
   .suggestion-row:hover { background: var(--secondary-background-color, rgba(127,127,127,.08)); }
   .suggestion-name b { font-weight: 700; }
   .suggestion-note { font-size: 12px; color: var(--secondary-text-color); }
+
+  .completed-toggle {
+    display: flex; align-items: center; gap: 6px; width: 100%;
+    margin-top: 10px; padding: 8px 4px; border: none; background: transparent;
+    color: var(--secondary-text-color); font-size: 13px; font-family: inherit;
+    cursor: pointer; border-radius: 6px; text-align: left;
+  }
+  .completed-toggle:hover, .completed-toggle:focus-visible { background: var(--secondary-background-color, rgba(127,127,127,.08)); }
+  .completed-toggle .chevron { display: inline-block; width: 1em; flex-shrink: 0; }
+  .completed-rows { margin-top: 4px; }
+  .clear-completed {
+    margin: 8px 0 2px; padding: 6px 10px; border-radius: 6px;
+    border: 1px solid var(--divider-color, rgba(127,127,127,.3)); background: transparent;
+    color: var(--secondary-text-color); font-size: 12px; font-family: inherit; cursor: pointer;
+  }
+  .clear-completed:hover, .clear-completed:focus-visible { color: var(--error-color, #db4437); border-color: var(--error-color, #db4437); }
 `;
 
 class OurGroceriesShoppingCard extends HTMLElement {
@@ -159,6 +185,10 @@ class OurGroceriesShoppingCard extends HTMLElement {
     this._error = false;
     this._lastState = null;
     this._instanceId = ++INSTANCE_COUNT;
+    // Pure UI state (not persisted across reloads of the page) — survives
+    // across _render() calls since it lives on the instance, not reset by
+    // the add/toggle/remove cycle that re-renders after every action.
+    this._showCompleted = false;
   }
 
   setConfig(config) {
@@ -269,6 +299,19 @@ class OurGroceriesShoppingCard extends HTMLElement {
     }
   }
 
+  // Inline note syntax for the add-item field: text after the first comma
+  // is a note, e.g. "Milk, 1.5%" -> {item: "Milk", note: "1.5%"}. An item
+  // name that itself contains a comma (rare, but real — "Ben & Jerry's,
+  // Cookie Dough") will have it split off as a note too; that's an accepted
+  // trade-off of this syntax over a second input field, not a bug.
+  _parseAddInput(raw) {
+    const idx = raw.indexOf(",");
+    if (idx === -1) return { item: raw.trim(), note: null };
+    const item = raw.slice(0, idx).trim();
+    const note = raw.slice(idx + 1).trim();
+    return { item, note: note || null };
+  }
+
   async _addItem(text) {
     const value = text.trim();
     if (!value) return;
@@ -321,14 +364,40 @@ class OurGroceriesShoppingCard extends HTMLElement {
     await this._loadItems();
   }
 
+  // Bulk-remove in a SINGLE service call (one array of uids), not a loop of
+  // single-item calls. HA's todo integration routes a multi-uid remove_item
+  // call to the entity's async_delete_todo_items() as one batch — that's
+  // the method ourgroceries-sync wraps in a concurrency-limiting semaphore
+  // (see its CLAUDE.md) to stay under OurGroceries' request-rate cap. A
+  // loop of single-item calls here would bypass that protection entirely,
+  // since each call would only ever have one item to fan out.
+  async _removeItems(items) {
+    if (items.length === 0) return;
+    await this._hass.callService(
+      "todo",
+      "remove_item",
+      { item: items.map((i) => i.uid) },
+      { entity_id: this._config.entity }
+    );
+    await this._loadItems();
+  }
+
   // ─── Grouping ──────────────────────────────────────────────────────────
 
-  _groupedItems() {
+  _activeItems() {
+    return this._items.filter((i) => i.status !== "completed");
+  }
+
+  _completedItems() {
+    return this._items.filter((i) => i.status === "completed");
+  }
+
+  _groupedItems(items) {
     if (!this._categories) return null; // signal: render flat, no headers
     const other = t(this._hass, "uncategorized");
     const order = [];
     const groups = new Map();
-    for (const item of this._items) {
+    for (const item of items) {
       const name = this._categories[item.uid] || other;
       if (!groups.has(name)) {
         groups.set(name, []);
@@ -355,10 +424,10 @@ class OurGroceriesShoppingCard extends HTMLElement {
       </div>`;
   }
 
-  _renderList() {
-    const grouped = this._groupedItems();
+  _renderList(items) {
+    const grouped = this._groupedItems(items);
     if (!grouped) {
-      return `<div class="rows">${this._items.map((item) => this._renderRow(item)).join("")}</div>`;
+      return `<div class="rows">${items.map((item) => this._renderRow(item)).join("")}</div>`;
     }
     return grouped
       .map(
@@ -428,13 +497,33 @@ class OurGroceriesShoppingCard extends HTMLElement {
   }
 
   _listBody() {
-    return this._loading
-      ? `<div class="status">${t(this._hass, "loading")}</div>`
-      : this._error
-        ? `<div class="status error">${t(this._hass, "error")}</div>`
-        : this._items.length === 0
-          ? `<div class="status">${t(this._hass, "empty")}</div>`
-          : this._renderList();
+    if (this._loading) return `<div class="status">${t(this._hass, "loading")}</div>`;
+    if (this._error) return `<div class="status error">${t(this._hass, "error")}</div>`;
+    if (this._items.length === 0) return `<div class="status">${t(this._hass, "empty")}</div>`;
+    const active = this._activeItems();
+    if (active.length === 0) return `<div class="status">${t(this._hass, "all_done")}</div>`;
+    return this._renderList(active);
+  }
+
+  // Crossed-off items are hidden from the main list by default (this card is
+  // for planning, not a shopping-history log) but never silently deleted —
+  // this collapsed-by-default section is the only place a delete can happen
+  // from, so an everyday checkbox tap on the main list is never destructive.
+  _renderCompletedSection() {
+    if (this._loading || this._error) return "";
+    const completed = this._completedItems();
+    if (completed.length === 0) return "";
+    const expanded = this._showCompleted;
+    return `
+      <button class="completed-toggle" aria-expanded="${expanded}">
+        <span class="chevron">${expanded ? "▾" : "▸"}</span>
+        ${t(this._hass, "completed_count", { n: completed.length })}
+      </button>
+      ${expanded ? `
+        <div class="rows completed-rows">${completed.map((item) => this._renderRow(item)).join("")}</div>
+        <button class="clear-completed">${t(this._hass, "clear_completed")}</button>
+      ` : ""}
+    `;
   }
 
   _renderCompact() {
@@ -480,6 +569,7 @@ class OurGroceriesShoppingCard extends HTMLElement {
       <ha-card>
         ${title ? `<div class="header">${title}</div>` : ""}
         ${this._listBody()}
+        ${this._renderCompletedSection()}
         <form class="add-row">
           <div class="suggestions-box"></div>
           <input type="text" placeholder="${t(this._hass, "add_placeholder")}" aria-label="${t(this._hass, "add_item")}" autocomplete="off">
@@ -526,6 +616,7 @@ class OurGroceriesShoppingCard extends HTMLElement {
           <div class="panel-col">
             ${title ? `<div class="header">${title}</div>` : ""}
             ${this._listBody()}
+            ${this._renderCompletedSection()}
           </div>
           <div class="panel-col">
             <form class="panel-add-row">
@@ -556,6 +647,14 @@ class OurGroceriesShoppingCard extends HTMLElement {
       });
     });
 
+    this.shadowRoot.querySelector(".completed-toggle")?.addEventListener("click", () => {
+      this._showCompleted = !this._showCompleted;
+      this._render();
+    });
+    this.shadowRoot.querySelector(".clear-completed")?.addEventListener("click", () => {
+      this._removeItems(this._completedItems());
+    });
+
     if (this._config.panel) {
       this._bindPanelAddEvents();
     } else {
@@ -576,7 +675,9 @@ class OurGroceriesShoppingCard extends HTMLElement {
 
     form.addEventListener("submit", (e) => {
       e.preventDefault();
-      this._addItem(input.value);
+      const { item, note } = this._parseAddInput(input.value);
+      if (note) this._addItemWithNote(item, note);
+      else this._addItem(item);
       input.value = "";
       closeDropdown();
     });
@@ -606,7 +707,9 @@ class OurGroceriesShoppingCard extends HTMLElement {
 
     form.addEventListener("submit", (e) => {
       e.preventDefault();
-      this._addItem(input.value);
+      const { item, note } = this._parseAddInput(input.value);
+      if (note) this._addItemWithNote(item, note);
+      else this._addItem(item);
       input.value = "";
       this._updatePanelSuggestions("");
     });
