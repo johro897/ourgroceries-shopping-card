@@ -27,7 +27,7 @@ const DEFAULT_LANG = "en";
 const TRANSLATIONS = {
   en: {
     entity_required: "entity is required",
-    add_placeholder: "Add an item…",
+    add_placeholder: "e.g. Milk, 1.5%",
     add_item: "Add item",
     add: "Add",
     remove: "Remove",
@@ -47,7 +47,7 @@ const TRANSLATIONS = {
   },
   sv: {
     entity_required: "entity krävs",
-    add_placeholder: "Lägg till en vara…",
+    add_placeholder: "t.ex. Mjölk, 1.5%",
     add_item: "Lägg till vara",
     add: "Lägg till",
     remove: "Ta bort",
@@ -297,6 +297,19 @@ class OurGroceriesShoppingCard extends HTMLElement {
         this._updateSuggestionsDropdown(input.value);
       }
     }
+  }
+
+  // Inline note syntax for the add-item field: text after the first comma
+  // is a note, e.g. "Milk, 1.5%" -> {item: "Milk", note: "1.5%"}. An item
+  // name that itself contains a comma (rare, but real — "Ben & Jerry's,
+  // Cookie Dough") will have it split off as a note too; that's an accepted
+  // trade-off of this syntax over a second input field, not a bug.
+  _parseAddInput(raw) {
+    const idx = raw.indexOf(",");
+    if (idx === -1) return { item: raw.trim(), note: null };
+    const item = raw.slice(0, idx).trim();
+    const note = raw.slice(idx + 1).trim();
+    return { item, note: note || null };
   }
 
   async _addItem(text) {
@@ -662,7 +675,9 @@ class OurGroceriesShoppingCard extends HTMLElement {
 
     form.addEventListener("submit", (e) => {
       e.preventDefault();
-      this._addItem(input.value);
+      const { item, note } = this._parseAddInput(input.value);
+      if (note) this._addItemWithNote(item, note);
+      else this._addItem(item);
       input.value = "";
       closeDropdown();
     });
@@ -692,7 +707,9 @@ class OurGroceriesShoppingCard extends HTMLElement {
 
     form.addEventListener("submit", (e) => {
       e.preventDefault();
-      this._addItem(input.value);
+      const { item, note } = this._parseAddInput(input.value);
+      if (note) this._addItemWithNote(item, note);
+      else this._addItem(item);
       input.value = "";
       this._updatePanelSuggestions("");
     });

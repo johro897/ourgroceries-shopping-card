@@ -26,6 +26,7 @@ Category grouping and suggestions both come from the separate, optional companio
 - Items grouped under a category header bar (color assigned per category name, not from OurGroceries — see "How categories work" below), when the companion integration provides category data
 - Remove button per item (shown on hover)
 - Add-item field with a click-to-add suggestions dropdown, sourced from your OurGroceries history — clicking a suggestion adds it immediately, no separate Add step (requires [ourgroceries-sync](https://github.com/johro897/ourgroceries-sync))
+- Type a note along with a new item using a comma, e.g. `Milk, 1.5%` — shown as subtext under the item, same as a suggestion's note (requires [ourgroceries-sync](https://github.com/johro897/ourgroceries-sync); editing a note on an existing item isn't supported yet, see [issue #10](https://github.com/johro897/ourgroceries-shopping-card/issues/10))
 - Visual editor — entity, title, and panel layout are all configurable from the dashboard UI, YAML is optional
 - Optional panel layout for a tablet/panel-view dashboard: two columns, list on the left, an always-visible (not dropdown) suggestions column on the right that live-filters as you type
 - Theme-aware styling, no external dependencies
@@ -97,6 +98,10 @@ This is a manual toggle, not auto-detected — Home Assistant's frontend has no 
 **Hide completed items by default** — [#9](https://github.com/johro897/ourgroceries-shopping-card/issues/9)
 - Checking an item off now removes it from the main list immediately instead of leaving it struck through indefinitely. A collapsed "N crossed off" section below the list holds them — expand it to uncheck an item back onto the main list, delete individual crossed-off items, or clear all of them at once
 - Delete only ever happens from inside that section, never from the main list's checkbox — an everyday tap can never be destructive
+
+**Add a note when typing a new item** — [#5](https://github.com/johro897/ourgroceries-shopping-card/issues/5)
+- The add-item field now accepts a comma-separated note, e.g. `Milk, 1.5%` — shown as subtext under the item, same as a suggestion's note
+- Scoped to create-time only. Editing a note on an item that already exists needs the real OurGroceries API confirmed to support it first — split off to [#10](https://github.com/johro897/ourgroceries-shopping-card/issues/10)
 
 ### 1.4.0 — First stable release
 
