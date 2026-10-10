@@ -414,6 +414,13 @@ test("mode: add in a 3-row grid cell (184px): fits, dropdown floats outside the 
   input.blur();
 });
 
+test("editor switch from mode: add to full loads the list", async () => {
+  const m = await mount({ mode: "add" });
+  m.card.setConfig({ type: "custom:ourgroceries-shopping-card", entity: "todo.shopping" });
+  await settle();
+  assert(m.sr.querySelectorAll(".list-region .row").length === 29, `rows=${m.sr.querySelectorAll(".list-region .row").length}`);
+});
+
 test("all user text is escaped", async () => {
   const m = await mount({ title: "<b>x</b>" }, { items: 0 });
   m.h.store.items.push({ uid: "x1", summary: "<img src=x onerror=alert(1)>", status: "needs_action" });

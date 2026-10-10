@@ -259,8 +259,20 @@ class OurGroceriesShoppingCard extends HTMLElement {
 
   setConfig(config) {
     if (!config.entity) throw new Error(t(this._hass, "entity_required"));
+    const prev = this._config;
     this._config = config;
     this._render();
+    // Edited live (e.g. in the card editor's preview): a different entity,
+    // or leaving add-only mode (which never loaded the list), needs a fresh
+    // load — the hass dirty-check alone wouldn't trigger one.
+    if (this._hass && prev && (prev.entity !== config.entity || (prev.mode === "add" && config.mode !== "add"))) {
+      if (prev.entity !== config.entity) {
+        this._items = [];
+        this._categories = null;
+        this._lastState = this._hass.states[config.entity]?.state;
+      }
+      this._loadItems();
+    }
   }
 
   // Set by HA's hui-card: "grid" inside a sections view, "panel" in a panel
