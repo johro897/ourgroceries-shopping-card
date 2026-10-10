@@ -69,6 +69,10 @@ type: custom:ourgroceries-shopping-card
 entity: todo.groceries
 title: Groceries   # optional — defaults to the entity's own friendly name
 panel: false       # optional — two-column layout, see "Panel layout" below
+input_position: bottom  # optional — "top" puts the add field above the list
+max_height: 480    # optional — cap the card's height; the list scrolls inside
+mode: full         # optional — "add" for a minimal quick-add card, see below
+navigation_path: /kitchen/shopping  # optional, mode: add — where the item count links to
 ```
 
 | Option | Type | Default | Description |
@@ -76,6 +80,41 @@ panel: false       # optional — two-column layout, see "Panel layout" below
 | `entity` | string | **required** | A `todo.*` entity |
 | `title` | string | *(entity's friendly name)* | Card title |
 | `panel` | boolean | `false` | Two-column layout for a tablet/panel-view dashboard — see below |
+| `input_position` | `bottom` \| `top` | `bottom` | Where the add-item field sits in the compact layout. `top` keeps it above the list — handy with a fixed card height |
+| `max_height` | number (px) or CSS length | *(none)* | Caps the card's height (e.g. `480`, `60vh`); the list then scrolls inside the card. For dashboards that don't use the sections grid — in a sections view, use the card's grid rows instead (see below) |
+
+| `mode` | `full` \| `add` | `full` | `add` shows only the add field with suggestions, a short confirmation and the number of items on the list — see "Add-only mode" below |
+| `navigation_path` | string | *(none)* | `mode: add` only. A dashboard path (e.g. `/kitchen/shopping`) — tapping the item count opens that view, e.g. the one with the full list. Must start with `/` |
+
+### Fixed height (sections view, wall tablets)
+
+In a **sections** view the card follows the grid. By default its height is `auto` and it grows with the list, exactly as before. Give it a fixed number of rows and it fills exactly that space instead — the title and add field stay put, and only the list scrolls inside the card, so the page itself never has to scroll:
+
+```yaml
+type: custom:ourgroceries-shopping-card
+entity: todo.groceries
+input_position: top
+grid_options:
+  columns: full
+  rows: 8
+```
+
+The suggestions dropdown opens downward as before, and flips upward (capped to the available space) when there isn't room below — e.g. with the add field at the bottom of a fixed-height card near the bottom of the screen. The add field also keeps its focus and text while the list refreshes, so a tablet's on-screen keyboard doesn't close mid-typing when another device changes the list.
+
+### Add-only mode
+
+For a start page or a small tile: `mode: add` drops the list and keeps just what you need to put something on it — the add field (with the same suggestions and `Item, note` syntax), a short "✓ Milk added" confirmation, and "12 items on the list". Pair it with a full card on another view and set `navigation_path` to that view, so the count takes you straight there:
+
+```yaml
+type: custom:ourgroceries-shopping-card
+entity: todo.groceries
+mode: add
+navigation_path: /kitchen/shopping
+grid_options:
+  rows: 3
+```
+
+The suggestions dropdown floats over the cards below, so it isn't cut off by a small tile. The count comes straight from the todo entity's state — this mode never downloads the list itself.
 
 ### Panel layout
 
@@ -104,9 +143,29 @@ This is a manual toggle, not auto-detected — Home Assistant's frontend has no 
 | List shows as a flat, ungrouped list instead of category headers | Same requirement as suggestions — category grouping also needs ourgroceries-sync installed against this exact entity |
 | A note doesn't appear under an item I just typed | Notes on new items use the comma syntax — type `Item, note` (e.g. `Milk, 1.5%`); plain text with no comma adds the item with no note |
 | "N crossed off" section doesn't appear | It only shows once at least one item is checked off — there's nothing to collapse until then |
+| Card still grows with the list in a sections view | Set `grid_options.rows` (e.g. `rows: 8`) on the card — with the default `auto` rows the card keeps its natural height. Outside a sections view, use `max_height` |
 | Panel layout doesn't show two columns | Requires `panel: true` in the card config — see [Panel layout](#panel-layout). Looks best in an actual HA panel view but works anywhere |
 
 ## Changelog
+
+### 1.6.0
+
+**Fixed height: follow the sections grid and scroll inside the card** — [#15](https://github.com/johro897/ourgroceries-shopping-card/issues/15)
+- In a sections view with `grid_options.rows` set, the card fills exactly that height and the list scrolls inside it — the page no longer scrolls as the list grows. Without `rows` (the default), nothing changes
+- New `input_position: top | bottom` (default `bottom`) and `max_height` options, both in the visual editor
+- The suggestions dropdown flips upward when there's no room below
+- List refreshes no longer rebuild the add field, so it keeps focus and its text (no more closed keyboard mid-typing on a tablet), and the list keeps its scroll position
+- New dependency-free test suite: `test/ourgroceries-shopping-card.test.html`
+
+**Add-only mode** — [#17](https://github.com/johro897/ourgroceries-shopping-card/issues/17)
+- New `mode: add` (default `full`): just the add field and suggestions, a short "✓ Milk added" confirmation and the number of items on the list — for a start page, with the full list on another view
+- New `navigation_path`: tapping the item count opens that dashboard view
+- Both in the visual editor
+
+**Touch-friendly sizing on touch screens** — [#16](https://github.com/johro897/ourgroceries-shopping-card/issues/16)
+- On touch screens only (`pointer: coarse` — tablets, phones): checkboxes, the remove button, the add field/button, suggestion rows and the crossed-off controls get hit areas of at least 44px, and list text is a bit larger
+- The remove ✕ is now always visible on touch screens — it used to appear only on mouse hover, so it was effectively invisible on a tablet or phone
+- Mouse/desktop rendering is unchanged
 
 ### 1.5.0
 
