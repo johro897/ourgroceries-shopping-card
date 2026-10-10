@@ -137,6 +137,11 @@ This is a manual toggle, not auto-detected — Home Assistant's frontend has no 
 - List refreshes no longer rebuild the add field, so it keeps focus and its text (no more closed keyboard mid-typing on a tablet), and the list keeps its scroll position
 - New dependency-free test suite: `test/ourgroceries-shopping-card.test.html`
 
+**Touch-friendly sizing on touch screens** — [#16](https://github.com/johro897/ourgroceries-shopping-card/issues/16)
+- On touch screens only (`pointer: coarse` — tablets, phones): checkboxes, the remove button, the add field/button, suggestion rows and the crossed-off controls get hit areas of at least 44px, and list text is a bit larger
+- The remove ✕ is now always visible on touch screens — it used to appear only on mouse hover, so it was effectively invisible on a tablet or phone
+- Mouse/desktop rendering is unchanged
+
 ### 1.5.0
 
 **Hide completed items by default** — [#9](https://github.com/johro897/ourgroceries-shopping-card/issues/9)
