@@ -144,6 +144,7 @@ const ROW_STYLES = `
     padding: 7px 0; border-bottom: 1px solid var(--divider-color, rgba(127,127,127,.2));
   }
   .rows .row:last-child, .group .row:last-child { border-bottom: none; }
+  .row .check { display: flex; align-items: center; justify-content: center; flex-shrink: 0; cursor: pointer; }
   .row input[type="checkbox"] { flex-shrink: 0; width: 18px; height: 18px; accent-color: var(--primary-color); cursor: pointer; }
   .row .summary-block { flex: 1; display: flex; flex-direction: column; min-width: 0; }
   .row .summary { font-size: 14px; color: var(--primary-text-color); word-break: break-word; }
@@ -182,6 +183,30 @@ const ROW_STYLES = `
     color: var(--secondary-text-color); font-size: 12px; font-family: inherit; cursor: pointer;
   }
   .clear-completed:hover, .clear-completed:focus-visible { color: var(--error-color, #db4437); border-color: var(--error-color, #db4437); }
+`;
+
+// Touch screens only (tablet, phone) — mouse/desktop rendering is untouched.
+// ≥44px hit areas, the remove button always visible (there is no hover on a
+// touch screen, so before this it was effectively invisible there), and a
+// slightly larger, more readable text size.
+const TOUCH_STYLES = `
+  @media (pointer: coarse) {
+    .row { gap: 4px; padding: 2px 0; min-height: 48px; }
+    .row .check { width: 44px; height: 44px; margin-left: -11px; }
+    .row input[type="checkbox"] { width: 22px; height: 22px; margin: 0; }
+    .row .summary { font-size: 16px; }
+    .row .note { font-size: 13px; }
+    .row .remove {
+      opacity: 1; width: 44px; height: 44px; margin-right: -10px;
+      font-size: 16px; padding: 0;
+    }
+    .suggestion-row { min-height: 48px; box-sizing: border-box; align-items: center; font-size: 16px; }
+    .suggestion-note { font-size: 13px; }
+    .completed-toggle { min-height: 44px; font-size: 14px; }
+    .clear-completed { min-height: 44px; padding: 0 14px; font-size: 14px; }
+    .add-row input, .panel-add-row input { min-height: 44px; box-sizing: border-box; font-size: 16px; }
+    .add-row button, .panel-add-row button { min-height: 44px; box-sizing: border-box; padding: 0 16px; font-size: 15px; }
+  }
 `;
 
 class OurGroceriesShoppingCard extends HTMLElement {
@@ -457,7 +482,7 @@ class OurGroceriesShoppingCard extends HTMLElement {
     const done = item.status === "completed";
     return `
       <div class="row${done ? " done" : ""}">
-        <input type="checkbox" data-uid="${esc(item.uid)}" ${done ? "checked" : ""} aria-label="${esc(item.summary)}">
+        <label class="check"><input type="checkbox" data-uid="${esc(item.uid)}" ${done ? "checked" : ""} aria-label="${esc(item.summary)}"></label>
         <span class="summary-block">
           <span class="summary">${esc(item.summary)}</span>
           ${item.description ? `<span class="note">${esc(item.description)}</span>` : ""}
@@ -670,6 +695,7 @@ class OurGroceriesShoppingCard extends HTMLElement {
           padding: 6px 14px; font-size: 11px; color: var(--secondary-text-color);
           border-top: 1px solid var(--divider-color, rgba(127,127,127,.2));
         }
+        ${TOUCH_STYLES}
       </style>
       <ha-card${this._haCardAttrs()}>
         ${title ? `<div class="header">${title}</div>` : ""}
@@ -711,6 +737,7 @@ class OurGroceriesShoppingCard extends HTMLElement {
 
         .panel-suggest-list { display: flex; flex-direction: column; max-height: 360px; overflow-y: auto; }
         :host([layout="grid"]) .panel-suggest-list, ha-card.capped .panel-suggest-list { flex: 1 1 auto; min-height: 0; max-height: none; }
+        ${TOUCH_STYLES}
       </style>
       <ha-card${this._haCardAttrs()}>
         <div class="panel-columns">

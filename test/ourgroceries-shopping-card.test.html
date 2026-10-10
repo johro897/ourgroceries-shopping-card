@@ -305,6 +305,37 @@ test("checkbox toggles via todo.update_item; clear crossed off is ONE remove_ite
   assert(removes.length === 1 && removes[0].data.item.length === 4, JSON.stringify(removes.map((r) => r.data.item.length)));
 });
 
+// ─── Touch sizing (#16) — run the page once normally and once with touch
+//     emulation (e.g. a mobile device preset); each run checks its own side.
+
+test("touch screens get ≥44px targets and a visible remove; mouse unchanged", async () => {
+  const m = await mount({});
+  const coarse = matchMedia("(pointer: coarse)").matches;
+  const row = m.$(".list-region .row");
+  const check = row.querySelector(".check").getBoundingClientRect();
+  const box = row.querySelector("input[type=checkbox]").getBoundingClientRect();
+  const remove = row.querySelector(".remove");
+  const input = m.$(".add-row input").getBoundingClientRect();
+  if (coarse) {
+    assert(check.width >= 44 && check.height >= 44, `check ${check.width}×${check.height}`);
+    assert(remove.getBoundingClientRect().width >= 44 && remove.getBoundingClientRect().height >= 44, "remove ≥44");
+    assert(getComputedStyle(remove).opacity === "1", "remove visible");
+    assert(input.height >= 44 && input.height <= 48, `input ${input.height}`);
+    assert(row.getBoundingClientRect().height >= 48, "row ≥48");
+  } else {
+    assert(Math.round(box.width) === 18, `checkbox ${box.width}`);
+    assert(getComputedStyle(remove).opacity === "0", "remove hidden until hover");
+  }
+  results.mode = coarse ? "touch" : "mouse";
+});
+
+test("tapping the label area around the checkbox toggles the item", async () => {
+  const m = await mount({});
+  m.$(".list-region .row .check").click();
+  await settle();
+  assert(m.h.store.calls.some((c) => c.service === "update_item"), "update_item via label");
+});
+
 test("all user text is escaped", async () => {
   const m = await mount({ title: "<b>x</b>" }, { items: 0 });
   m.h.store.items.push({ uid: "x1", summary: "<img src=x onerror=alert(1)>", status: "needs_action" });
@@ -328,7 +359,7 @@ test("all user text is escaped", async () => {
   }
   results.done = true;
   const s = document.getElementById("summary");
-  s.textContent = `${results.passed}/${tests.length} passed`;
+  s.textContent = `${results.passed}/${tests.length} passed (${results.mode || "?"} pointer)`;
   s.className = results.failed ? "fail" : "pass";
 })();
 </script>
