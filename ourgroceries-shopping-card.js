@@ -1,5 +1,5 @@
 /**
- * ourgroceries-shopping-card  v1.5.1
+ * ourgroceries-shopping-card  v1.6.0
  * Shopping-list card for a `todo.*` entity (e.g. from the companion
  * ourgroceries-sync integration, or any other todo.* source), with
  * add-item suggestions sourced from ourgroceries-sync's

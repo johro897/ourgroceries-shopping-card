@@ -148,7 +148,7 @@ This is a manual toggle, not auto-detected — Home Assistant's frontend has no 
 
 ## Changelog
 
-### Unreleased (`release-1.6.0`)
+### 1.6.0
 
 **Fixed height: follow the sections grid and scroll inside the card** — [#15](https://github.com/johro897/ourgroceries-shopping-card/issues/15)
 - In a sections view with `grid_options.rows` set, the card fills exactly that height and the list scrolls inside it — the page no longer scrolls as the list grows. Without `rows` (the default), nothing changes
