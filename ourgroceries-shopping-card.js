@@ -23,6 +23,10 @@
  *                             # list (compact layout only)
  *   max_height: 480          # optional — px number or CSS length; the list
  *                             # then scrolls inside the card
+ *   mode: full               # optional — "add" shows only the add field +
+ *                             # suggestions, a confirmation and an item count
+ *   navigation_path: /kitchen/shopping  # optional (mode: add) — tapping the
+ *                             # item count opens the view with the full list
  *
  * In a sections view the card follows grid_options.rows: set rows (e.g. 8)
  * and the card fills exactly that height, with the list scrolling inside.
@@ -56,6 +60,13 @@ const TRANSLATIONS = {
     editor_max_height: "Max height, e.g. 480 or 60vh (optional; in a sections view use the card's grid rows instead)",
     input_bottom: "Below the list",
     input_top: "Above the list",
+    items_on_list: "{n} items on the list",
+    items_on_list_one: "1 item on the list",
+    added: "{name} added",
+    editor_mode: "Mode",
+    mode_full: "Full list",
+    mode_add: "Add only (quick-add field, no list)",
+    editor_navigation_path: "Full list view path (add-only mode, e.g. /kitchen/shopping)",
   },
   sv: {
     entity_required: "entity krävs",
@@ -80,6 +91,13 @@ const TRANSLATIONS = {
     editor_max_height: "Maxhöjd, t.ex. 480 eller 60vh (valfritt; i en sektionsvy, använd kortets rader istället)",
     input_bottom: "Under listan",
     input_top: "Ovanför listan",
+    items_on_list: "{n} varor på listan",
+    items_on_list_one: "1 vara på listan",
+    added: "{name} tillagd",
+    editor_mode: "Läge",
+    mode_full: "Hela listan",
+    mode_add: "Bara lägg till (snabbfält, ingen lista)",
+    editor_navigation_path: "Sökväg till vyn med hela listan (lägg-till-läge, t.ex. /kok/inkop)",
   },
 };
 
@@ -235,6 +253,8 @@ class OurGroceriesShoppingCard extends HTMLElement {
     // so the add field keeps its focus/value (and a touch keyboard stays up).
     this._shellKey = null;
     this._layout = undefined;
+    this._lastAdded = null;
+    this._addedTimer = null;
   }
 
   setConfig(config) {
@@ -298,6 +318,13 @@ class OurGroceriesShoppingCard extends HTMLElement {
   }
 
   async _loadItems() {
+    // Add-only mode shows no list — its item count comes straight from the
+    // todo entity's state, so it never fetches items or categories at all.
+    if (this._isAddMode()) {
+      this._loading = false;
+      this._render();
+      return;
+    }
     this._loading = this._items.length === 0;
     this._error = false;
     this._render();
@@ -383,6 +410,7 @@ class OurGroceriesShoppingCard extends HTMLElement {
     const value = text.trim();
     if (!value) return;
     await this._hass.callService("todo", "add_item", { item: value }, { entity_id: this._config.entity });
+    this._onAdded(value);
     await this._loadItems();
   }
 
@@ -407,7 +435,21 @@ class OurGroceriesShoppingCard extends HTMLElement {
       // item, just without its note, rather than doing nothing.
       await this._hass.callService("todo", "add_item", { item: value }, { entity_id: this._config.entity });
     }
+    this._onAdded(value);
     await this._loadItems();
+  }
+
+  // Add-only mode can't show the new item in a list, so it confirms the add
+  // with a short-lived "Milk added" line instead. No-op in the full modes.
+  _onAdded(name) {
+    if (!this._isAddMode()) return;
+    this._lastAdded = name;
+    clearTimeout(this._addedTimer);
+    this._addedTimer = setTimeout(() => {
+      this._lastAdded = null;
+      this._renderAddStatus();
+    }, 4000);
+    this._renderAddStatus();
   }
 
   async _toggleItem(item) {
@@ -577,15 +619,28 @@ class OurGroceriesShoppingCard extends HTMLElement {
   _render() {
     if (!this._config) return;
     const key = this._computeShellKey();
-    if (key !== this._shellKey || !this.shadowRoot.querySelector(".list-region")) {
+    if (key !== this._shellKey || !this.shadowRoot.querySelector("ha-card")) {
       this._shellKey = key;
-      if (this._config.panel) {
+      if (this._isAddMode()) {
+        this._renderAddShell();
+      } else if (this._config.panel) {
         this._renderPanelShell();
       } else {
         this._renderCompactShell();
       }
     }
-    this._renderListRegion();
+    if (this._isAddMode()) this._renderAddStatus();
+    else this._renderListRegion();
+  }
+
+  _isAddMode() {
+    return this._config?.mode === "add";
+  }
+
+  // Only same-dashboard paths ("/...") — never a javascript: or external URL.
+  _navigationPath() {
+    const p = this._config.navigation_path;
+    return typeof p === "string" && p.startsWith("/") && !p.startsWith("//") ? p : null;
   }
 
   // Everything the shell's markup depends on. Item data is NOT part of it —
@@ -594,6 +649,8 @@ class OurGroceriesShoppingCard extends HTMLElement {
     const cfg = this._config;
     return JSON.stringify([
       !!cfg.panel,
+      this._isAddMode(),
+      this._navigationPath(),
       this._inputPosition(),
       cfg.max_height ?? null,
       this._title(),
@@ -706,6 +763,107 @@ class OurGroceriesShoppingCard extends HTMLElement {
     `;
 
     this._bindCompactAddEvents();
+  }
+
+  // mode: add — title, item count (optionally a link to the full list's
+  // view), the add field with its suggestions dropdown, and a confirmation
+  // line. Reuses the compact add row as-is (same events, same dropdown
+  // placement); the dropdown floats over whatever sits below the card.
+  _renderAddShell() {
+    const title = esc(this._title());
+    const path = this._navigationPath();
+    const count = path
+      ? `<a class="count" href="${esc(path)}"></a>`
+      : `<span class="count"></span>`;
+
+    this.shadowRoot.innerHTML = `
+      <style>
+        ${this._shellStyles()}
+
+        .add-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 12px; min-height: 24px; }
+        .add-head .header { margin-bottom: 0; }
+        .count { font-size: 13px; color: var(--secondary-text-color); white-space: nowrap; }
+        a.count {
+          color: var(--primary-color); text-decoration: none; cursor: pointer;
+          display: inline-flex; align-items: center; min-height: 32px; margin: -6px -6px -6px auto;
+          padding: 0 6px; border-radius: 6px;
+        }
+        a.count::after { content: "›"; margin-left: 4px; font-size: 16px; }
+        a.count:hover { text-decoration: underline; }
+        a.count:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 1px; }
+
+        .add-row { display: flex; gap: 8px; position: relative; flex-shrink: 0; }
+        .add-row input {
+          flex: 1; min-width: 0; padding: 8px 10px; border-radius: 8px;
+          border: 1px solid var(--divider-color, rgba(127,127,127,.3));
+          background: var(--card-background-color, transparent);
+          color: var(--primary-text-color); font-size: 14px; font-family: inherit;
+        }
+        .add-row input:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 1px; }
+        .add-row button {
+          flex-shrink: 0; padding: 8px 14px; border-radius: 8px; border: none;
+          background: var(--primary-color); color: var(--text-primary-color, #fff);
+          font-size: 14px; font-family: inherit; cursor: pointer;
+        }
+        .add-row button:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 2px; }
+
+        .suggestions-box {
+          display: none;
+          position: absolute; top: 100%; left: 0; right: 0; margin-top: 6px;
+          background: var(--card-background-color, #fff);
+          border: 1px solid var(--divider-color, rgba(127,127,127,.3));
+          border-radius: 10px;
+          box-shadow: 0 6px 16px rgba(0,0,0,.18);
+          overflow: hidden; z-index: 4;
+        }
+        .suggestions-box.up { top: auto; bottom: 100%; margin-top: 0; margin-bottom: 6px; }
+        .suggestions-list { max-height: 240px; overflow-y: auto; overscroll-behavior: contain; }
+        .suggestions-hint {
+          padding: 6px 14px; font-size: 11px; color: var(--secondary-text-color);
+          border-top: 1px solid var(--divider-color, rgba(127,127,127,.2));
+        }
+
+        .added { min-height: 18px; margin-top: 8px; font-size: 13px; color: var(--success-color, #43a047); }
+        .added:not(:empty)::before { content: "✓ "; }
+
+        ${TOUCH_STYLES}
+        @media (pointer: coarse) {
+          a.count { min-height: 44px; margin: -10px -6px -10px auto; font-size: 14px; }
+          .added { font-size: 14px; }
+        }
+      </style>
+      <ha-card${this._haCardAttrs()}>
+        <div class="add-head">
+          ${title ? `<div class="header">${title}</div>` : "<span></span>"}
+          ${count}
+        </div>
+        ${this._addFormHtml("add-row")}
+        <div class="added" role="status" aria-live="polite"></div>
+      </ha-card>
+    `;
+
+    // HA's own in-app navigation: push the path and tell the frontend's
+    // router, so the dashboard switches view without a full page reload.
+    this.shadowRoot.querySelector("a.count")?.addEventListener("click", (e) => {
+      if (e.ctrlKey || e.metaKey || e.shiftKey) return;
+      e.preventDefault();
+      window.history.pushState(null, "", path);
+      window.dispatchEvent(new CustomEvent("location-changed", { detail: { replace: false } }));
+    });
+
+    this._bindCompactAddEvents();
+  }
+
+  _renderAddStatus() {
+    const count = this.shadowRoot.querySelector(".count");
+    if (count) {
+      const n = Number(this._hass?.states[this._config.entity]?.state);
+      count.textContent = Number.isFinite(n)
+        ? (n === 1 ? t(this._hass, "items_on_list_one") : t(this._hass, "items_on_list", { n }))
+        : "";
+    }
+    const added = this.shadowRoot.querySelector(".added");
+    if (added) added.textContent = this._lastAdded ? t(this._hass, "added", { name: this._lastAdded }) : "";
   }
 
   _renderPanelShell() {
@@ -920,6 +1078,19 @@ function editorSchema(hass) {
       },
     },
     { name: "max_height", selector: { text: {} } },
+    {
+      name: "mode",
+      selector: {
+        select: {
+          mode: "dropdown",
+          options: [
+            { value: "full", label: t(hass, "mode_full") },
+            { value: "add", label: t(hass, "mode_add") },
+          ],
+        },
+      },
+    },
+    { name: "navigation_path", selector: { text: {} } },
   ];
 }
 
