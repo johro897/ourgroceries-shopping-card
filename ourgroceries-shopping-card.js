@@ -1,5 +1,5 @@
 /**
- * ourgroceries-shopping-card  v1.4.0
+ * ourgroceries-shopping-card  v1.5.1
  * Shopping-list card for a `todo.*` entity (e.g. from the companion
  * ourgroceries-sync integration, or any other todo.* source), with
  * add-item suggestions sourced from ourgroceries-sync's
@@ -12,13 +12,21 @@
  * flat ungrouped list) if ourgroceries-sync isn't installed, or if the
  * configured entity comes from a different todo.* source entirely.
  *
- * Has a visual editor (entity/title/panel), or configure directly:
+ * Has a visual editor, or configure directly:
  *   type: custom:ourgroceries-shopping-card
  *   entity: todo.groceries   # required
  *   title: Groceries         # optional, defaults to the entity's own name
  *   panel: false             # optional — two-column layout for a tablet/
  *                             # panel-view dashboard (suggestions become an
  *                             # always-visible column instead of a dropdown)
+ *   input_position: bottom   # optional — "top" puts the add field above the
+ *                             # list (compact layout only)
+ *   max_height: 480          # optional — px number or CSS length; the list
+ *                             # then scrolls inside the card
+ *
+ * In a sections view the card follows grid_options.rows: set rows (e.g. 8)
+ * and the card fills exactly that height, with the list scrolling inside.
+ * Without rows it keeps its natural height, as before.
  */
 
 let INSTANCE_COUNT = 0;
@@ -44,6 +52,10 @@ const TRANSLATIONS = {
     editor_entity: "Entity",
     editor_title: "Title",
     editor_panel: "Panel layout (two columns, for a tablet/panel-view dashboard)",
+    editor_input_position: "Add field position (compact layout)",
+    editor_max_height: "Max height, e.g. 480 or 60vh (optional; in a sections view use the card's grid rows instead)",
+    input_bottom: "Below the list",
+    input_top: "Above the list",
   },
   sv: {
     entity_required: "entity krävs",
@@ -64,6 +76,10 @@ const TRANSLATIONS = {
     editor_entity: "Entitet",
     editor_title: "Titel",
     editor_panel: "Panel-layout (två kolumner, för en surfplatta/panel-vy)",
+    editor_input_position: "Inmatningsfältets placering (kompakt layout)",
+    editor_max_height: "Maxhöjd, t.ex. 480 eller 60vh (valfritt; i en sektionsvy, använd kortets rader istället)",
+    input_bottom: "Under listan",
+    input_top: "Ovanför listan",
   },
 };
 
@@ -189,12 +205,31 @@ class OurGroceriesShoppingCard extends HTMLElement {
     // across _render() calls since it lives on the instance, not reset by
     // the add/toggle/remove cycle that re-renders after every action.
     this._showCompleted = false;
+    // The card shell (header, add row, list container) is only rebuilt when
+    // this key changes; ordinary list refreshes only swap the list region,
+    // so the add field keeps its focus/value (and a touch keyboard stays up).
+    this._shellKey = null;
+    this._layout = undefined;
   }
 
   setConfig(config) {
     if (!config.entity) throw new Error(t(this._hass, "entity_required"));
     this._config = config;
     this._render();
+  }
+
+  // Set by HA's hui-card: "grid" inside a sections view, "panel" in a panel
+  // view, undefined in masonry. Reflected as an attribute so the CSS can fill
+  // the grid cell's height ONLY in a sections grid — elsewhere the card keeps
+  // its natural height, exactly as before.
+  set layout(value) {
+    this._layout = value;
+    if (value) this.setAttribute("layout", value);
+    else this.removeAttribute("layout");
+  }
+
+  get layout() {
+    return this._layout;
   }
 
   set hass(hass) {
@@ -219,6 +254,13 @@ class OurGroceriesShoppingCard extends HTMLElement {
 
   getCardSize() {
     return 3;
+  }
+
+  // Sections view: same defaults HA uses for a card without this method
+  // (full width, auto height), so nothing changes unless the dashboard sets
+  // grid_options.rows — then the card fills that height and scrolls inside.
+  getGridOptions() {
+    return { columns: 12, rows: "auto", min_columns: 6, min_rows: 2 };
   }
 
   // ─── Data ──────────────────────────────────────────────────────────────
@@ -471,6 +513,26 @@ class OurGroceriesShoppingCard extends HTMLElement {
     const markup = this._suggestionsMarkup(query);
     box.innerHTML = markup;
     box.style.display = markup ? "block" : "none";
+    if (markup) this._placeSuggestionsBox(box);
+  }
+
+  // Open toward the side of the viewport with room, and cap the list to that
+  // room so it is never cut off. Opens downward as before whenever there is
+  // reasonable space below; flips up only when there isn't (e.g. the add row
+  // at the bottom of a fixed-height card near the bottom of a tablet screen).
+  _placeSuggestionsBox(box) {
+    const row = box.parentElement;
+    const list = box.querySelector(".suggestions-list");
+    if (!row || !list) return;
+    const rect = row.getBoundingClientRect();
+    const viewport = window.innerHeight || document.documentElement.clientHeight || 0;
+    const below = viewport - rect.bottom;
+    const above = rect.top;
+    const up = below < 200 && above > below;
+    box.classList.toggle("up", up);
+    // 6px gap + the hint line (~28px) + a little breathing room.
+    const room = Math.floor((up ? above : below) - 48);
+    list.style.maxHeight = `${Math.max(96, Math.min(240, room))}px`;
   }
 
   // Panel mode's suggestions column has no visibility toggle — it's always
@@ -489,11 +551,193 @@ class OurGroceriesShoppingCard extends HTMLElement {
 
   _render() {
     if (!this._config) return;
-    if (this._config.panel) {
-      this._renderPanel();
-    } else {
-      this._renderCompact();
+    const key = this._computeShellKey();
+    if (key !== this._shellKey || !this.shadowRoot.querySelector(".list-region")) {
+      this._shellKey = key;
+      if (this._config.panel) {
+        this._renderPanelShell();
+      } else {
+        this._renderCompactShell();
+      }
     }
+    this._renderListRegion();
+  }
+
+  // Everything the shell's markup depends on. Item data is NOT part of it —
+  // that only ever touches the list region.
+  _computeShellKey() {
+    const cfg = this._config;
+    return JSON.stringify([
+      !!cfg.panel,
+      this._inputPosition(),
+      cfg.max_height ?? null,
+      this._title(),
+      t(this._hass, "add_placeholder"),
+    ]);
+  }
+
+  _title() {
+    const cfg = this._config;
+    return cfg.title || this._hass?.states[cfg.entity]?.attributes?.friendly_name || "";
+  }
+
+  _inputPosition() {
+    return this._config.input_position === "top" ? "top" : "bottom";
+  }
+
+  // max_height: a number (px) or any CSS length string ("60vh", "480px").
+  _maxHeightCss() {
+    const v = this._config.max_height;
+    if (v === undefined || v === null || v === "") return null;
+    if (typeof v === "number" || /^\d+(\.\d+)?$/.test(String(v).trim())) return `${Number(v)}px`;
+    return String(v).trim().replace(/[;{}<>"]/g, "");
+  }
+
+  // Shared by both layouts: in a sections grid (layout="grid") the host and
+  // ha-card fill the cell; with max_height the card is capped. In both cases
+  // ha-card gets the "constrained" class and the list scrolls inside it.
+  // Without either, every rule below resolves to the card's natural height.
+  _shellStyles() {
+    return `
+      :host { display: block; }
+      :host([layout="grid"]) { height: 100%; }
+      ha-card { padding: 14px 16px 16px; box-sizing: border-box; display: flex; flex-direction: column; }
+      :host([layout="grid"]) ha-card { height: 100%; }
+      .header { flex-shrink: 0; }
+      .list-scroll { flex: 1 1 auto; min-height: 0; }
+      :host([layout="grid"]) .list-scroll, ha-card.capped .list-scroll {
+        overflow-y: auto; overscroll-behavior: contain;
+        margin: 0 -16px; padding: 0 16px;
+      }
+      ${ROW_STYLES}
+      /* Before 1.6 the groups were siblings of the title <div>, so with a
+         title the first group never matched :first-of-type and kept its
+         14px top margin. Kept identical now that groups live in .list-region. */
+      .header + .list-scroll .group:first-of-type .group-header { margin-top: 14px; }
+    `;
+  }
+
+  _haCardAttrs() {
+    const max = this._maxHeightCss();
+    return max ? ` class="capped" style="max-height:${esc(max)}"` : "";
+  }
+
+  _addFormHtml(cls) {
+    return `
+      <form class="${cls}">
+        ${cls.startsWith("add-row") ? `<div class="suggestions-box"></div>` : ""}
+        <input type="text" placeholder="${t(this._hass, "add_placeholder")}" aria-label="${t(this._hass, "add_item")}" autocomplete="off">
+        <button type="submit">${t(this._hass, "add")}</button>
+      </form>`;
+  }
+
+  _renderCompactShell() {
+    const title = esc(this._title());
+    const top = this._inputPosition() === "top";
+
+    this.shadowRoot.innerHTML = `
+      <style>
+        ${this._shellStyles()}
+
+        .add-row { display: flex; gap: 8px; margin-top: 14px; position: relative; flex-shrink: 0; }
+        .add-row.top { margin-top: 0; margin-bottom: 12px; }
+        .add-row input {
+          flex: 1; min-width: 0; padding: 8px 10px; border-radius: 8px;
+          border: 1px solid var(--divider-color, rgba(127,127,127,.3));
+          background: var(--card-background-color, transparent);
+          color: var(--primary-text-color); font-size: 14px; font-family: inherit;
+        }
+        .add-row input:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 1px; }
+        .add-row button {
+          flex-shrink: 0; padding: 8px 14px; border-radius: 8px; border: none;
+          background: var(--primary-color); color: var(--text-primary-color, #fff);
+          font-size: 14px; font-family: inherit; cursor: pointer;
+        }
+        .add-row button:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 2px; }
+
+        .suggestions-box {
+          display: none;
+          position: absolute; top: 100%; left: 0; right: 0; margin-top: 6px;
+          background: var(--card-background-color, #fff);
+          border: 1px solid var(--divider-color, rgba(127,127,127,.3));
+          border-radius: 10px;
+          box-shadow: 0 6px 16px rgba(0,0,0,.18);
+          overflow: hidden; z-index: 4;
+        }
+        .suggestions-box.up { top: auto; bottom: 100%; margin-top: 0; margin-bottom: 6px; }
+        .suggestions-list { max-height: 240px; overflow-y: auto; overscroll-behavior: contain; }
+        .suggestions-hint {
+          padding: 6px 14px; font-size: 11px; color: var(--secondary-text-color);
+          border-top: 1px solid var(--divider-color, rgba(127,127,127,.2));
+        }
+      </style>
+      <ha-card${this._haCardAttrs()}>
+        ${title ? `<div class="header">${title}</div>` : ""}
+        ${top ? this._addFormHtml("add-row top") : ""}
+        <div class="list-scroll"><div class="list-region"></div></div>
+        ${top ? "" : this._addFormHtml("add-row")}
+      </ha-card>
+    `;
+
+    this._bindCompactAddEvents();
+  }
+
+  _renderPanelShell() {
+    const title = esc(this._title());
+
+    this.shadowRoot.innerHTML = `
+      <style>
+        ${this._shellStyles()}
+
+        .panel-columns { display: flex; gap: 24px; align-items: flex-start; }
+        .panel-col { flex: 1; min-width: 0; }
+        :host([layout="grid"]) .panel-columns, ha-card.capped .panel-columns { flex: 1 1 auto; min-height: 0; align-items: stretch; }
+        :host([layout="grid"]) .panel-col, ha-card.capped .panel-col { display: flex; flex-direction: column; min-height: 0; }
+
+        .panel-add-row { display: flex; gap: 8px; margin-bottom: 14px; flex-shrink: 0; }
+        .panel-add-row input {
+          flex: 1; min-width: 0; padding: 8px 10px; border-radius: 8px;
+          border: 1px solid var(--divider-color, rgba(127,127,127,.3));
+          background: var(--card-background-color, transparent);
+          color: var(--primary-text-color); font-size: 14px; font-family: inherit;
+        }
+        .panel-add-row input:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 1px; }
+        .panel-add-row button {
+          flex-shrink: 0; padding: 8px 14px; border-radius: 8px; border: none;
+          background: var(--primary-color); color: var(--text-primary-color, #fff);
+          font-size: 14px; font-family: inherit; cursor: pointer;
+        }
+        .panel-add-row button:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 2px; }
+
+        .panel-suggest-list { display: flex; flex-direction: column; max-height: 360px; overflow-y: auto; }
+        :host([layout="grid"]) .panel-suggest-list, ha-card.capped .panel-suggest-list { flex: 1 1 auto; min-height: 0; max-height: none; }
+      </style>
+      <ha-card${this._haCardAttrs()}>
+        <div class="panel-columns">
+          <div class="panel-col">
+            ${title ? `<div class="header">${title}</div>` : ""}
+            <div class="list-scroll"><div class="list-region"></div></div>
+          </div>
+          <div class="panel-col">
+            ${this._addFormHtml("panel-add-row")}
+            <div class="header">${t(this._hass, "suggestions_header")}</div>
+            <div class="panel-suggest-list">${this._panelSuggestionsMarkup("")}</div>
+          </div>
+        </div>
+      </ha-card>
+    `;
+
+    this._bindPanelAddEvents();
+  }
+
+  // The only part of the card that changes when items change. Keeps the
+  // list's scroll position across refreshes (innerHTML swap of the CHILD,
+  // the scroll container itself stays in the DOM).
+  _renderListRegion() {
+    const region = this.shadowRoot.querySelector(".list-region");
+    if (!region) return;
+    region.innerHTML = `${this._listBody()}${this._renderCompletedSection()}`;
+    this._bindListEvents();
   }
 
   _listBody() {
@@ -526,140 +770,29 @@ class OurGroceriesShoppingCard extends HTMLElement {
     `;
   }
 
-  _renderCompact() {
-    const cfg = this._config;
-    const title = esc(cfg.title || this._hass?.states[cfg.entity]?.attributes?.friendly_name || "");
-
-    this.shadowRoot.innerHTML = `
-      <style>
-        :host { display: block; }
-        ha-card { padding: 14px 16px 16px; }
-        ${ROW_STYLES}
-
-        .add-row { display: flex; gap: 8px; margin-top: 14px; position: relative; }
-        .add-row input {
-          flex: 1; min-width: 0; padding: 8px 10px; border-radius: 8px;
-          border: 1px solid var(--divider-color, rgba(127,127,127,.3));
-          background: var(--card-background-color, transparent);
-          color: var(--primary-text-color); font-size: 14px; font-family: inherit;
-        }
-        .add-row input:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 1px; }
-        .add-row button {
-          flex-shrink: 0; padding: 8px 14px; border-radius: 8px; border: none;
-          background: var(--primary-color); color: var(--text-primary-color, #fff);
-          font-size: 14px; font-family: inherit; cursor: pointer;
-        }
-        .add-row button:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 2px; }
-
-        .suggestions-box {
-          display: none;
-          position: absolute; top: 100%; left: 0; right: 0; margin-top: 6px;
-          background: var(--card-background-color, #fff);
-          border: 1px solid var(--divider-color, rgba(127,127,127,.3));
-          border-radius: 10px;
-          box-shadow: 0 6px 16px rgba(0,0,0,.18);
-          overflow: hidden; z-index: 1;
-        }
-        .suggestions-list { max-height: 240px; overflow-y: auto; }
-        .suggestions-hint {
-          padding: 6px 14px; font-size: 11px; color: var(--secondary-text-color);
-          border-top: 1px solid var(--divider-color, rgba(127,127,127,.2));
-        }
-      </style>
-      <ha-card>
-        ${title ? `<div class="header">${title}</div>` : ""}
-        ${this._listBody()}
-        ${this._renderCompletedSection()}
-        <form class="add-row">
-          <div class="suggestions-box"></div>
-          <input type="text" placeholder="${t(this._hass, "add_placeholder")}" aria-label="${t(this._hass, "add_item")}" autocomplete="off">
-          <button type="submit">${t(this._hass, "add")}</button>
-        </form>
-      </ha-card>
-    `;
-
-    this._bindEvents();
-  }
-
-  _renderPanel() {
-    const cfg = this._config;
-    const title = esc(cfg.title || this._hass?.states[cfg.entity]?.attributes?.friendly_name || "");
-
-    this.shadowRoot.innerHTML = `
-      <style>
-        :host { display: block; }
-        ha-card { padding: 14px 16px 16px; }
-        ${ROW_STYLES}
-
-        .panel-columns { display: flex; gap: 24px; align-items: flex-start; }
-        .panel-col { flex: 1; min-width: 0; }
-
-        .panel-add-row { display: flex; gap: 8px; margin-bottom: 14px; }
-        .panel-add-row input {
-          flex: 1; min-width: 0; padding: 8px 10px; border-radius: 8px;
-          border: 1px solid var(--divider-color, rgba(127,127,127,.3));
-          background: var(--card-background-color, transparent);
-          color: var(--primary-text-color); font-size: 14px; font-family: inherit;
-        }
-        .panel-add-row input:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 1px; }
-        .panel-add-row button {
-          flex-shrink: 0; padding: 8px 14px; border-radius: 8px; border: none;
-          background: var(--primary-color); color: var(--text-primary-color, #fff);
-          font-size: 14px; font-family: inherit; cursor: pointer;
-        }
-        .panel-add-row button:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 2px; }
-
-        .panel-suggest-list { display: flex; flex-direction: column; max-height: 360px; overflow-y: auto; }
-      </style>
-      <ha-card>
-        <div class="panel-columns">
-          <div class="panel-col">
-            ${title ? `<div class="header">${title}</div>` : ""}
-            ${this._listBody()}
-            ${this._renderCompletedSection()}
-          </div>
-          <div class="panel-col">
-            <form class="panel-add-row">
-              <input type="text" placeholder="${t(this._hass, "add_placeholder")}" aria-label="${t(this._hass, "add_item")}" autocomplete="off">
-              <button type="submit">${t(this._hass, "add")}</button>
-            </form>
-            <div class="header">${t(this._hass, "suggestions_header")}</div>
-            <div class="panel-suggest-list">${this._panelSuggestionsMarkup("")}</div>
-          </div>
-        </div>
-      </ha-card>
-    `;
-
-    this._bindEvents();
-  }
-
-  _bindEvents() {
-    this.shadowRoot.querySelectorAll(".row input[type=checkbox]").forEach((el) => {
+  _bindListEvents() {
+    const region = this.shadowRoot.querySelector(".list-region");
+    if (!region) return;
+    region.querySelectorAll(".row input[type=checkbox]").forEach((el) => {
       el.addEventListener("change", () => {
         const item = this._items.find((i) => i.uid === el.dataset.uid);
         if (item) this._toggleItem(item);
       });
     });
-    this.shadowRoot.querySelectorAll(".row .remove").forEach((el) => {
+    region.querySelectorAll(".row .remove").forEach((el) => {
       el.addEventListener("click", () => {
         const item = this._items.find((i) => i.uid === el.dataset.uid);
         if (item) this._removeItem(item);
       });
     });
 
-    this.shadowRoot.querySelector(".completed-toggle")?.addEventListener("click", () => {
+    region.querySelector(".completed-toggle")?.addEventListener("click", () => {
       this._showCompleted = !this._showCompleted;
-      this._render();
+      this._renderListRegion();
     });
-    this.shadowRoot.querySelector(".clear-completed")?.addEventListener("click", () => {
+    region.querySelector(".clear-completed")?.addEventListener("click", () => {
       this._removeItems(this._completedItems());
     });
-
-    if (this._config.panel) {
-      this._bindPanelAddEvents();
-    } else {
-      this._bindCompactAddEvents();
-    }
   }
 
   _bindCompactAddEvents() {
@@ -742,11 +875,26 @@ class OurGroceriesShoppingCard extends HTMLElement {
   }
 }
 
-const EDITOR_SCHEMA = [
-  { name: "entity", required: true, selector: { entity: { domain: "todo" } } },
-  { name: "title", selector: { text: {} } },
-  { name: "panel", selector: { boolean: {} } },
-];
+function editorSchema(hass) {
+  return [
+    { name: "entity", required: true, selector: { entity: { domain: "todo" } } },
+    { name: "title", selector: { text: {} } },
+    { name: "panel", selector: { boolean: {} } },
+    {
+      name: "input_position",
+      selector: {
+        select: {
+          mode: "dropdown",
+          options: [
+            { value: "bottom", label: t(hass, "input_bottom") },
+            { value: "top", label: t(hass, "input_top") },
+          ],
+        },
+      },
+    },
+    { name: "max_height", selector: { text: {} } },
+  ];
+}
 
 class OurGroceriesShoppingCardEditor extends HTMLElement {
   setConfig(config) {
@@ -778,7 +926,7 @@ class OurGroceriesShoppingCardEditor extends HTMLElement {
 
     this._form.hass = this._hass;
     this._form.data = this._config;
-    this._form.schema = EDITOR_SCHEMA;
+    this._form.schema = editorSchema(this._hass);
     this._form.computeLabel = (schema) => t(this._hass, `editor_${schema.name}`);
   }
 }
