@@ -336,6 +336,84 @@ test("tapping the label area around the checkbox toggles the item", async () => 
   assert(m.h.store.calls.some((c) => c.service === "update_item"), "update_item via label");
 });
 
+// ─── Add-only mode (#17) ──────────────────────────────────────────────────
+
+test("mode: add shows no list, never fetches items, counts from the entity state", async () => {
+  const m = await mount({ mode: "add" });
+  assert(!m.$(".list-region") && !m.$(".row"), "no list");
+  assert(m.h.store.getItems === 0, `get_items called ${m.h.store.getItems}×`);
+  assert(!m.h.store.calls.some((c) => c.service === "get_categories"), "no categories fetch");
+  assert(m.$(".count").textContent === "29 items on the list", m.$(".count").textContent);
+  assert(m.$(".add-row input") && m.$(".suggestions-box"), "add field + dropdown");
+});
+
+test("mode: add — singular count, and no link without navigation_path", async () => {
+  const m = await mount({ mode: "add" }, { items: 4 });
+  assert(m.$(".count").textContent === "1 item on the list", m.$(".count").textContent);
+  assert(m.$(".count").tagName === "SPAN", "plain text without navigation_path");
+});
+
+test("mode: add — adding shows a confirmation, keeps focus, count follows the entity", async () => {
+  const m = await mount({ mode: "add" });
+  const form = m.$(".add-row"), input = form.querySelector("input");
+  input.focus();
+  input.value = "Bread"; form.requestSubmit();
+  await settle();
+  assert(m.$(".added").textContent === "Bread added", m.$(".added").textContent);
+  m.card.hass = nextHass(m.h); // HA pushes the new state
+  await settle();
+  assert(m.$(".count").textContent === "30 items on the list", m.$(".count").textContent);
+  assert(m.$(".add-row input") === input && m.sr.activeElement === input, "input rebuilt / focus lost");
+  assert(m.h.store.getItems === 0, "still no get_items");
+});
+
+test("mode: add — suggestion with a note keeps the note", async () => {
+  const m = await mount({ mode: "add" });
+  const input = m.$(".add-row input");
+  input.focus(); input.value = "Mil"; input.dispatchEvent(new Event("input"));
+  m.$(".suggestion-row").dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
+  await settle();
+  const c = m.h.store.calls.find((x) => x.service === "add_item");
+  assert(c.domain === "ourgroceries_sync" && c.data.note === "1.5%", JSON.stringify(c));
+  assert(m.$(".added").textContent === "Milk added", m.$(".added").textContent);
+});
+
+test("mode: add — navigation_path navigates in-app (pushState + location-changed)", async () => {
+  const start = location.href;
+  const m = await mount({ mode: "add", navigation_path: "/kitchen/shopping" });
+  const link = m.$("a.count");
+  assert(link && link.getAttribute("href") === "/kitchen/shopping", "link");
+  let fired = false;
+  const on = () => { fired = true; };
+  window.addEventListener("location-changed", on);
+  link.click();
+  window.removeEventListener("location-changed", on);
+  const path = location.pathname;
+  history.replaceState(null, "", start);
+  assert(fired && path === "/kitchen/shopping", `fired=${fired} path=${path}`);
+});
+
+test("mode: add — unsafe navigation_path is ignored", async () => {
+  for (const bad of ["javascript:alert(1)", "https://example.com", "//evil.example"]) {
+    const m = await mount({ mode: "add", navigation_path: bad });
+    assert(!m.$("a.count"), `link rendered for ${bad}`);
+  }
+});
+
+test("mode: add in a 3-row grid cell (184px): fits, dropdown floats outside the card", async () => {
+  // Pinned near the top of the viewport, so there is room below to open into.
+  const m = await mount({ mode: "add", title: "Shopping list" }, { layout: "grid", cellStyle: "height:184px;position:fixed;top:20px;left:500px" });
+  const card = m.card.getBoundingClientRect();
+  assert(Math.round(card.height) === 184, `height=${card.height}`);
+  const added = m.$(".added").getBoundingClientRect();
+  assert(added.bottom <= card.bottom + 0.5, "content fits inside the card");
+  const input = m.$(".add-row input");
+  input.focus(); input.dispatchEvent(new Event("focus"));
+  const box = m.$(".suggestions-box").getBoundingClientRect();
+  assert(box.height > 100 && box.bottom > card.bottom, "dropdown extends below the card");
+  input.blur();
+});
+
 test("all user text is escaped", async () => {
   const m = await mount({ title: "<b>x</b>" }, { items: 0 });
   m.h.store.items.push({ uid: "x1", summary: "<img src=x onerror=alert(1)>", status: "needs_action" });
