@@ -1,0 +1,336 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ourgroceries-shopping-card — test suite</title>
+<!--
+  Dependency-free test suite: loads the card's real JS file and runs it
+  against hand-built `hass` objects in a real browser. Serve the repo root
+  (e.g. `python -m http.server`) and open /test/ourgroceries-shopping-card.test.html.
+  Results show on the page and in `window.__results` ({passed, failed, done}).
+-->
+<style>
+  body { font-family: system-ui, sans-serif; margin: 16px; background: #fafafa; color: #212121;
+         --primary-color: #03a9f4; --primary-text-color: #212121; --secondary-text-color: #727272;
+         --card-background-color: #fff; --divider-color: rgba(0,0,0,.12); }
+  #summary { font-size: 18px; font-weight: 600; margin-bottom: 8px; }
+  .pass { color: #1b7f45; } .fail { color: #c62828; }
+  #log div { font: 13px/1.5 ui-monospace, monospace; }
+  #stage { position: relative; }
+  .cell { width: 420px; margin: 8px 0; }
+</style>
+</head>
+<body>
+<div id="summary">Running…</div>
+<div id="log"></div>
+<div id="stage"></div>
+
+<script>
+  // Minimal stand-in for HA's ha-card: like the real one, `display: block`
+  // lives in its OWN shadow (:host), so the card's outer styles override it.
+  customElements.define("ha-card", class extends HTMLElement {
+    constructor() {
+      super();
+      this.attachShadow({ mode: "open" }).innerHTML =
+        "<style>:host{display:block;background:var(--card-background-color)}</style><slot></slot>";
+    }
+  });
+</script>
+<script src="../ourgroceries-shopping-card.js"></script>
+<script>
+const CATS = ["Produce", "Dairy", "Bakery", "Pantry", "Household"];
+const SUGGESTIONS = [
+  { name: "Milk", note: "1.5%" }, { name: "Mango", note: "" }, { name: "Maize", note: "can" },
+  { name: "Macaroni", note: "" }, { name: "Marmalade", note: "orange" }, { name: "Butter", note: "" },
+];
+
+// A fake HA backed by an in-memory list, recording every service call.
+function makeHass(itemCount = 32, opts = {}) {
+  const store = { items: [], categories: {}, calls: [], getItems: 0 };
+  for (let i = 0; i < itemCount; i++) {
+    const uid = `u${i}`;
+    store.items.push({ uid, summary: `Item ${i}`, status: i < 3 ? "completed" : "needs_action", description: i % 5 === 0 ? `note ${i}` : undefined });
+    store.categories[uid] = CATS[i % CATS.length];
+  }
+  let nextUid = 1000;
+  const entity = "todo.shopping";
+  const stateObj = () => ({ state: String(store.items.filter((i) => i.status !== "completed").length), attributes: { friendly_name: "Shopping list" } });
+  const hass = {
+    language: "en", locale: { language: "en" },
+    states: { [entity]: stateObj() },
+    connection: {
+      async sendMessagePromise(msg) {
+        store.calls.push(msg);
+        if (msg.domain === "todo" && msg.service === "get_items") {
+          store.getItems++;
+          return { response: { [entity]: { items: store.items.map((i) => ({ ...i })) } } };
+        }
+        if (msg.service === "get_categories") {
+          if (opts.noCompanion) throw new Error("no service");
+          return { response: { categories: { ...store.categories } } };
+        }
+        if (msg.service === "get_suggestions") {
+          if (opts.noCompanion) throw new Error("no service");
+          return { response: { items: SUGGESTIONS } };
+        }
+        throw new Error(`unexpected ${msg.domain}.${msg.service}`);
+      },
+    },
+    async callService(domain, service, data, target) {
+      store.calls.push({ domain, service, data, target });
+      if (service === "add_item") store.items.push({ uid: `u${nextUid++}`, summary: data.item, status: "needs_action", description: data.note });
+      if (service === "update_item") store.items.find((i) => i.uid === data.item).status = data.status;
+      if (service === "remove_item") store.items = store.items.filter((i) => !data.item.includes(i.uid));
+    },
+  };
+  return { hass, store, entity, stateObj };
+}
+
+// Next hass object with a refreshed state (as HA does on every state change).
+function nextHass(h) {
+  return { ...h.hass, states: { [h.entity]: h.stateObj() } };
+}
+
+const tick = (ms = 0) => new Promise((r) => setTimeout(r, ms));
+async function settle() { for (let i = 0; i < 6; i++) await tick(5); }
+
+async function mount(config, { layout, cellStyle = "", items = 32, hassOpts } = {}) {
+  const cell = document.createElement("div");
+  cell.className = "cell";
+  cell.style.cssText = cellStyle;
+  document.getElementById("stage").appendChild(cell);
+  const card = document.createElement("ourgroceries-shopping-card");
+  if (layout) card.layout = layout;
+  card.setConfig({ type: "custom:ourgroceries-shopping-card", entity: "todo.shopping", ...config });
+  cell.appendChild(card);
+  const h = makeHass(items, hassOpts);
+  card.hass = h.hass;
+  await settle();
+  const $ = (sel) => card.shadowRoot.querySelector(sel);
+  return { card, cell, h, $, sr: card.shadowRoot };
+}
+
+const results = { passed: 0, failed: 0, failures: [], done: false };
+window.__results = results;
+const tests = [];
+function test(name, fn) { tests.push({ name, fn }); }
+function assert(cond, msg) { if (!cond) throw new Error(msg); }
+
+// ─── Unchanged default behavior ───────────────────────────────────────────
+
+test("masonry (no layout): card keeps natural height, list does not scroll", async () => {
+  const { card, $ } = await mount({});
+  const scroll = $(".list-scroll");
+  assert(getComputedStyle(scroll).overflowY === "visible", `overflowY=${getComputedStyle(scroll).overflowY}`);
+  assert(card.getBoundingClientRect().height > 900, `height=${card.getBoundingClientRect().height}`);
+  assert(scroll.scrollHeight <= scroll.clientHeight + 1, "list region should not be scrollable");
+});
+
+test("default: add row is after the list (input_position bottom)", async () => {
+  const { $ } = await mount({});
+  const form = $(".add-row"), list = $(".list-scroll");
+  assert(list.compareDocumentPosition(form) & Node.DOCUMENT_POSITION_FOLLOWING, "form should follow the list");
+  assert(!form.classList.contains("top"), "no top class");
+});
+
+test("sections grid with rows auto (cell auto height): natural height", async () => {
+  const { card } = await mount({}, { layout: "grid" });
+  assert(card.getBoundingClientRect().height > 900, `height=${card.getBoundingClientRect().height}`);
+});
+
+test("panel view layout: card not stretched, behaves as before", async () => {
+  const { card } = await mount({ panel: true }, { layout: "panel", cellStyle: "height:300px" });
+  assert(card.getBoundingClientRect().height > 300, `panel card should keep natural height, got ${card.getBoundingClientRect().height}`);
+});
+
+test("getGridOptions keeps HA's defaults (full width, auto rows)", async () => {
+  const { card } = await mount({});
+  const o = card.getGridOptions();
+  assert(o.rows === "auto" && o.columns === 12, JSON.stringify(o));
+});
+
+test("categories group headers render; without companion → flat list", async () => {
+  const a = await mount({});
+  assert(a.sr.querySelectorAll(".group-header").length === CATS.length, "group headers");
+  const b = await mount({}, { hassOpts: { noCompanion: true } });
+  assert(b.sr.querySelectorAll(".group-header").length === 0, "flat list without companion");
+  assert(b.sr.querySelectorAll(".row").length === 29, `rows=${b.sr.querySelectorAll(".row").length}`);
+});
+
+// ─── Fixed height (#15) ───────────────────────────────────────────────────
+
+test("sections grid rows: 8 → card fills exactly 504px and list scrolls inside", async () => {
+  const { card, $ } = await mount({}, { layout: "grid", cellStyle: "height:504px" });
+  const r = card.getBoundingClientRect();
+  assert(Math.round(r.height) === 504, `height=${r.height}`);
+  const scroll = $(".list-scroll");
+  assert(getComputedStyle(scroll).overflowY === "auto", "overflow auto");
+  assert(scroll.scrollHeight > scroll.clientHeight + 50, "list should overflow its box");
+  const form = $(".add-row").getBoundingClientRect();
+  assert(form.bottom <= r.bottom + 0.5 && form.top >= r.top, "add row inside the card");
+});
+
+test("input_position: top puts the add row above the scrolling list", async () => {
+  const { card, $ } = await mount({ input_position: "top" }, { layout: "grid", cellStyle: "height:504px" });
+  const form = $(".add-row"), list = $(".list-scroll");
+  assert(form.classList.contains("top"), "top class");
+  assert(form.getBoundingClientRect().bottom <= list.getBoundingClientRect().top + 0.5, "form above list");
+  assert(Math.round(card.getBoundingClientRect().height) === 504, "still 504");
+});
+
+test("max_height caps a non-sections card and scrolls inside", async () => {
+  const { card, $ } = await mount({ max_height: 300 });
+  assert(Math.round(card.getBoundingClientRect().height) === 300, `height=${card.getBoundingClientRect().height}`);
+  assert($(".list-scroll").scrollHeight > $(".list-scroll").clientHeight, "scrolls");
+  const b = await mount({ max_height: "40vh" });
+  assert($(".list-scroll") && b.$("ha-card").style.maxHeight === "40vh", "css length passes through");
+});
+
+test("max_height: unsafe characters are stripped", async () => {
+  const { $ } = await mount({ max_height: '300px"><img src=x>' });
+  assert(!$("img"), "no injected element");
+});
+
+test("panel layout in a fixed grid cell fills height, left list scrolls", async () => {
+  const { card, $ } = await mount({ panel: true }, { layout: "grid", cellStyle: "height:504px;width:900px" });
+  assert(Math.round(card.getBoundingClientRect().height) === 504, `height=${card.getBoundingClientRect().height}`);
+  const scroll = $(".list-scroll");
+  assert(scroll.scrollHeight > scroll.clientHeight, "left list scrolls");
+});
+
+// ─── Focus / refresh (#15) ────────────────────────────────────────────────
+
+test("typing survives a list refresh: same input element, focus and value kept", async () => {
+  const m = await mount({ input_position: "top" }, { layout: "grid", cellStyle: "height:504px" });
+  const input = m.$(".add-row input");
+  input.focus();
+  input.value = "Mi";
+  // An external change (another device crosses something off).
+  m.h.store.items[10].status = "completed";
+  m.card.hass = nextHass(m.h);
+  await settle();
+  assert(m.$(".add-row input") === input, "input element was rebuilt");
+  assert(m.sr.activeElement === input, "focus lost");
+  assert(input.value === "Mi", `value=${input.value}`);
+  assert(m.sr.querySelectorAll(".list-region .row").length === 28, "list refreshed");
+});
+
+test("list scroll position survives a refresh", async () => {
+  const m = await mount({}, { layout: "grid", cellStyle: "height:504px" });
+  const scroll = m.$(".list-scroll");
+  scroll.scrollTop = 200;
+  m.h.store.items[20].status = "completed";
+  m.card.hass = nextHass(m.h);
+  await settle();
+  assert(m.$(".list-scroll") === scroll && scroll.scrollTop === 200, `scrollTop=${scroll.scrollTop}`);
+});
+
+test("dirty-check: unchanged todo state → no reload", async () => {
+  const m = await mount({});
+  const before = m.h.store.getItems;
+  m.card.hass = nextHass(m.h);
+  await settle();
+  assert(m.h.store.getItems === before, `get_items called ${m.h.store.getItems - before} extra times`);
+});
+
+test("crossed-off toggle re-renders only the list region", async () => {
+  const m = await mount({});
+  const input = m.$(".add-row input");
+  m.$(".completed-toggle").click();
+  await settle();
+  assert(m.$(".completed-rows"), "expanded");
+  assert(m.$(".add-row input") === input, "input untouched");
+});
+
+// ─── Suggestions placement (#15) ──────────────────────────────────────────
+
+test("suggestions open down when the add row is at the top", async () => {
+  const m = await mount({ input_position: "top" }, { layout: "grid", cellStyle: "height:504px" });
+  const input = m.$(".add-row input");
+  input.focus(); input.value = "Ma"; input.dispatchEvent(new Event("input"));
+  const box = m.$(".suggestions-box");
+  assert(box.style.display === "block", "visible");
+  assert(!box.classList.contains("up"), "should open down");
+  assert(box.querySelectorAll(".suggestion-row").length === 4, "4 matches for 'Ma'");
+  input.blur();
+});
+
+test("suggestions flip up when the add row sits at the bottom of the viewport", async () => {
+  assert(window.innerHeight > 500, `needs a real viewport (innerHeight=${window.innerHeight}) — open the page in a visible window`);
+  const m = await mount({}, { layout: "grid", cellStyle: `height:504px;position:fixed;left:460px;bottom:0` });
+  const input = m.$(".add-row input");
+  input.focus(); input.dispatchEvent(new Event("focus"));
+  const box = m.$(".suggestions-box");
+  assert(box.classList.contains("up"), "should open up");
+  const listMax = parseInt(box.querySelector(".suggestions-list").style.maxHeight, 10);
+  assert(listMax >= 96 && listMax <= 240, `maxHeight=${listMax}`);
+  assert(box.getBoundingClientRect().top >= 0, "not cut off at the top");
+  input.blur();
+  m.cell.remove();
+});
+
+// ─── Existing actions still work ──────────────────────────────────────────
+
+test("submit: plain add → todo.add_item; 'Milk, 1.5%' → ourgroceries_sync.add_item with note", async () => {
+  const m = await mount({});
+  const form = m.$(".add-row"), input = form.querySelector("input");
+  input.value = "Bread"; form.requestSubmit();
+  await settle();
+  input.value = "Milk, 1.5%"; form.requestSubmit();
+  await settle();
+  const svc = m.h.store.calls.filter((c) => c.service === "add_item");
+  assert(svc[0].domain === "todo" && svc[0].data.item === "Bread", JSON.stringify(svc[0]));
+  assert(svc[1].domain === "ourgroceries_sync" && svc[1].data.note === "1.5%", JSON.stringify(svc[1]));
+});
+
+test("picking a suggestion adds it with its note", async () => {
+  const m = await mount({});
+  const input = m.$(".add-row input");
+  input.focus(); input.value = "Mil"; input.dispatchEvent(new Event("input"));
+  m.$(".suggestion-row").dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
+  await settle();
+  const c = m.h.store.calls.find((x) => x.service === "add_item");
+  assert(c.domain === "ourgroceries_sync" && c.data.item === "Milk" && c.data.note === "1.5%", JSON.stringify(c));
+});
+
+test("checkbox toggles via todo.update_item; clear crossed off is ONE remove_item call", async () => {
+  const m = await mount({});
+  m.$(".list-region .row input[type=checkbox]").click();
+  await settle();
+  assert(m.h.store.calls.some((c) => c.service === "update_item" && c.data.status === "completed"), "update_item");
+  m.$(".completed-toggle").click(); await settle();
+  m.$(".clear-completed").click(); await settle();
+  const removes = m.h.store.calls.filter((c) => c.service === "remove_item");
+  assert(removes.length === 1 && removes[0].data.item.length === 4, JSON.stringify(removes.map((r) => r.data.item.length)));
+});
+
+test("all user text is escaped", async () => {
+  const m = await mount({ title: "<b>x</b>" }, { items: 0 });
+  m.h.store.items.push({ uid: "x1", summary: "<img src=x onerror=alert(1)>", status: "needs_action" });
+  m.card.hass = nextHass(m.h); await settle();
+  assert(!m.sr.querySelector("img") && !m.sr.querySelector(".header b"), "unescaped markup");
+});
+
+(async () => {
+  const log = document.getElementById("log");
+  for (const { name, fn } of tests) {
+    try {
+      await fn();
+      results.passed++;
+      log.insertAdjacentHTML("beforeend", `<div class="pass">✓ ${name}</div>`);
+    } catch (e) {
+      results.failed++;
+      results.failures.push(`${name}: ${e.message}`);
+      log.insertAdjacentHTML("beforeend", `<div class="fail">✗ ${name} — ${String(e.message).replace(/</g, "&lt;")}</div>`);
+    }
+    document.getElementById("stage").innerHTML = "";
+  }
+  results.done = true;
+  const s = document.getElementById("summary");
+  s.textContent = `${results.passed}/${tests.length} passed`;
+  s.className = results.failed ? "fail" : "pass";
+})();
+</script>
+</body>
+</html>
