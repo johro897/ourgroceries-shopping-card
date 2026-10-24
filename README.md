@@ -43,9 +43,8 @@ Items with genuinely no category at all are grouped under a "No category" bucket
 
 ### Via HACS
 
-1. HACS → ⋮ → Custom repositories → add `https://github.com/johro897/ourgroceries-shopping-card`, category **Dashboard**
-2. Search for **OurGroceries Shopping Card** and install
-3. Add the resource if HACS doesn't do it automatically: **Settings → Dashboards → Resources**
+1. In HACS, search for **OurGroceries Shopping Card** and install it
+2. Add the resource if HACS doesn't do it automatically: **Settings → Dashboards → Resources**
 
 ### Manual
 
